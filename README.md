@@ -28,8 +28,23 @@ not just hear it.
 
 ## Status
 
-🚧 Early development. Current milestone: **MVP-0 spike** — confirming how the Claude
-Agent SDK surfaces permission requests and multiple-choice questions.
+🚧 Early development. **v0.1 shipped**: permission prompts are fully driven by
+speech + keyboard (announce → navigate → spoken confirm → allow/deny), via the
+Agent SDK's `canUseTool` callback. The MVP-0 spike ([docs/FINDINGS.md](docs/FINDINGS.md))
+confirmed both permission prompts _and_ `AskUserQuestion` arrive through that one
+callback. **Next (v0.3):** answering multiple-choice questions (not just
+announcing them).
+
+### Run it
+
+```bash
+npm install
+npm start -- "create a file hello.txt that says hi"   # triggers a permission prompt
+npm start -- --silent "…"                              # no audio; prints [SPEAK] lines
+npm test                                               # 20 tests, no tokens
+```
+
+Requires Claude Code auth on this machine (the SDK reuses it).
 
 ## Planned architecture
 
