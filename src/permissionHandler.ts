@@ -1,18 +1,19 @@
 /**
  * The wiring: a `canUseTool`-compatible handler that turns a raw SDK decision
  * into the accessible loop — normalize -> announce -> navigate -> commit ->
- * return {allow|deny}.
+ * return the result.
  *
- * Scope for v0.1: permission prompts are fully handled. Multiple-choice
- * questions (AskUserQuestion) are announced but not yet answerable — returning
- * the selected answer through canUseTool is the open question deferred to v0.3
- * (see docs/FINDINGS.md), so for now we deny them with a clear spoken reason
- * rather than guess and commit the wrong thing.
+ *   - permission prompts  -> { allow } / { deny }          (v0.1)
+ *   - AskUserQuestion     -> { allow, updatedInput.answers } (v0.3)
+ *
+ * Both decision types arrive through this one callback (proven by the MVP-0
+ * spike) and are answered the way the v0.3 spike confirmed (see docs/FINDINGS.md).
  */
 
 import type { CanUseToolContext, Decision, DecisionOption, PermissionResult } from "./types.js";
 import type { Announcer } from "./announcer/announcer.js";
 import { toDecision } from "./interceptor/toDecision.js";
+import { buildAnswerInput } from "./interceptor/answer.js";
 import { promptDecision } from "./input/keyboard.js";
 
 /** Drives one decision to a committed option. Injectable so tests skip the TTY. */
@@ -27,9 +28,6 @@ export interface HandlerDeps {
   prompt?: PromptFn;
 }
 
-const QUESTION_DEFERRED =
-  "claude-ally does not yet answer multiple-choice questions. Denying for now.";
-
 export function createCanUseTool(deps: HandlerDeps) {
   const prompt: PromptFn =
     deps.prompt ??
@@ -42,18 +40,17 @@ export function createCanUseTool(deps: HandlerDeps) {
     ctx: CanUseToolContext,
   ): Promise<PermissionResult> {
     const decision = toDecision(toolName, input, ctx);
-
-    // v0.1: questions are announced but not answerable yet.
-    if (decision.kind === "question") {
-      await deps.announcer.announce(decision);
-      await deps.announcer.failure(QUESTION_DEFERRED);
-      return { behavior: "deny", message: QUESTION_DEFERRED };
-    }
-
-    const requireConfirm = decision.riskLevel === "high";
     await deps.announcer.announce(decision);
 
     try {
+      if (decision.kind === "question") {
+        // Answer by navigating to a choice and returning it as updatedInput.answers.
+        const chosen = await prompt(decision, { requireConfirm: false });
+        return { behavior: "allow", updatedInput: buildAnswerInput(decision.raw.input, chosen.label) };
+      }
+
+      // Permission prompt: allow/deny, with a second confirm on high-risk.
+      const requireConfirm = decision.riskLevel === "high";
       const chosen = await prompt(decision, { requireConfirm });
       if (chosen.value === "allow") return { behavior: "allow" };
       return { behavior: "deny", message: "Denied by the user via claude-ally." };

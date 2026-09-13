@@ -57,7 +57,28 @@ point; branch on `toolName`.
 - `signal` is an `AbortSignal` (not JSON-serializable); `toolUseID` is the
   `toolu_...` id, needed to correlate with the stream.
 
-## Open question (deferred to v0.3)
+## v0.3 — Answering AskUserQuestion (RESOLVED)
 
-How to RETURN a selected answer for `AskUserQuestion` (vs. plain allow/deny).
-Permissions (v0.1) don't need this.
+Second mini-spike (`npm run spike:q`) confirmed the answer mechanism:
+
+```ts
+// Select option(s) by returning allow with an `answers` array in updatedInput:
+return {
+  behavior: "allow",
+  updatedInput: {
+    ...input,
+    answers: [{ header: question.header, label: chosenLabel }],
+  },
+};
+```
+
+The SDK converted this into a `tool_result` and Claude responded "I see you
+chose **Red**." — i.e. the selection registered. Notes:
+
+- The structured `answers` array is the real payload; the SDK's human-readable
+  summary string showed a cosmetic `"[object Object]"` but Claude read `answers`
+  correctly.
+- Each answer is `{ header, label }`. Use the question's own `header` and the
+  chosen option's `label`.
+- Verified for **single-select** (`multiSelect: false`). Multi-select answer
+  shape is still TODO (probably a label array or multiple entries).

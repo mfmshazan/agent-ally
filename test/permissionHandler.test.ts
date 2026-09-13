@@ -58,16 +58,30 @@ async function run(): Promise<void> {
     assert.equal(res.behavior, "deny");
   });
 
-  await test("questions are deferred (denied with reason) in v0.1", async () => {
-    const { canUseTool, fake } = handlerWith(pick("red"));
+  await test("question -> allow with the chosen answer", async () => {
+    const { canUseTool } = handlerWith(pick("Red"));
     const res = await canUseTool(
       "AskUserQuestion",
-      { questions: [{ question: "Q", header: "H", multiSelect: false, options: [] }] },
+      {
+        questions: [
+          {
+            question: "Which color?",
+            header: "Color",
+            multiSelect: false,
+            options: [
+              { label: "Red", description: "" },
+              { label: "Blue", description: "" },
+            ],
+          },
+        ],
+      },
       ctx,
     );
-    assert.equal(res.behavior, "deny");
-    assert.match(res.behavior === "deny" ? res.message : "", /does not yet/);
-    assert.equal(fake.failures.length, 1);
+    assert.equal(res.behavior, "allow");
+    assert.deepEqual(
+      res.behavior === "allow" ? (res.updatedInput as { answers: unknown }).answers : null,
+      [{ header: "Color", label: "Red" }],
+    );
   });
 
   await test("prompt failure (Ctrl+C) fails safe to deny", async () => {

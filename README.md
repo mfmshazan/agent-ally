@@ -28,12 +28,17 @@ not just hear it.
 
 ## Status
 
-🚧 Early development. **v0.1 shipped**: permission prompts are fully driven by
-speech + keyboard (announce → navigate → spoken confirm → allow/deny), via the
-Agent SDK's `canUseTool` callback. The MVP-0 spike ([docs/FINDINGS.md](docs/FINDINGS.md))
-confirmed both permission prompts _and_ `AskUserQuestion` arrive through that one
-callback. **Next (v0.3):** answering multiple-choice questions (not just
-announcing them).
+🚧 Early development. **v0.3 shipped.** Both decision types are driven by speech
++ keyboard through the Agent SDK's `canUseTool` callback:
+
+- **Permission prompts** — announce → navigate → spoken confirm (high-risk needs
+  two presses) → allow/deny.
+- **Multiple-choice questions** (`AskUserQuestion`) — announce → navigate →
+  select → the choice is returned to Claude as the answer.
+
+Both mechanisms were validated by spikes first (see [docs/FINDINGS.md](docs/FINDINGS.md)).
+**Next:** config (voice/rate/verbosity), multi-select questions, and recruiting
+the GitHub-issue author as a test user.
 
 ### Run it
 
