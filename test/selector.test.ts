@@ -14,8 +14,12 @@ class FakeAnnouncer {
   confirmed: string[] = [];
   committedOpts: string[] = [];
   detailsCount = 0;
+  repeatCount = 0;
   async selection(o: DecisionOption, index: number): Promise<void> {
     this.selections.push({ label: o.label, index });
+  }
+  async repeat(): Promise<void> {
+    this.repeatCount += 1;
   }
   async confirm(o: DecisionOption): Promise<void> {
     this.confirmed.push(o.label);
@@ -96,6 +100,15 @@ async function run(): Promise<void> {
     const committed = await sel.handleKey(k("d"));
     assert.equal(committed, null);
     assert.equal(fake.detailsCount, 1);
+  });
+
+  await test("'r' re-announces and re-speaks the current selection", async () => {
+    const { sel, fake } = make(false);
+    const committed = await sel.handleKey(k("r"));
+    assert.equal(committed, null);
+    assert.equal(fake.repeatCount, 1);
+    // also reminds the cursor position
+    assert.equal(fake.selections.at(-1)?.index, 0);
   });
 
   console.log(`\n${passed} passed`);

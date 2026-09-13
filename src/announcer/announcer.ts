@@ -47,24 +47,36 @@ export class Announcer {
     await this.speaker.speak(text);
   }
 
-  /** Announce a decision when it first appears: earcon + intro + options list. */
+  /** Announce a decision when it first appears: earcon + intro + options + hint. */
   async announce(decision: Decision): Promise<void> {
     await this.earcon.play("blocking");
+    await this.speakBody(decision);
+    if (this.verbosity !== "terse") await this.speaker.speak(this.hint(decision));
+  }
 
+  /** Re-announce on demand (the "R to repeat" affordance). No earcon. */
+  async repeat(decision: Decision): Promise<void> {
+    await this.speakBody(decision);
+    await this.speaker.speak(this.hint(decision));
+  }
+
+  private async speakBody(decision: Decision): Promise<void> {
     if (decision.kind === "permission") {
       const risk = decision.riskLevel === "low" ? "" : ` ${riskPhrase(decision.riskLevel)}`;
       await this.speaker.speak(`Permission needed. ${decision.title}.${risk}`);
     } else {
       await this.speaker.speak(`Claude is asking. ${decision.title}.`);
     }
-
     await this.speakOptionList(decision.options);
+  }
 
-    const hint =
-      decision.kind === "permission" && decision.command
-        ? `Use the arrow keys or number keys to choose, then press enter. Say "details" to hear the full command.`
-        : "Use the arrow keys or number keys to choose, then press enter.";
-    if (this.verbosity !== "terse") await this.speaker.speak(hint);
+  private hint(decision: Decision): string {
+    const base =
+      "Use the arrow keys or number keys to choose, then press enter. Press R to repeat.";
+    if (decision.kind === "permission" && decision.command) {
+      return `${base} Press D to hear the full command.`;
+    }
+    return base;
   }
 
   private async speakOptionList(options: DecisionOption[]): Promise<void> {

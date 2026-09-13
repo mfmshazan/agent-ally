@@ -77,6 +77,11 @@ export class Selector {
       case "d":
         await this.deps.announcer.details(this.decision);
         return null;
+      case "r":
+        // Re-hear the whole decision, then where the cursor currently is.
+        await this.deps.announcer.repeat(this.decision);
+        await this.deps.announcer.selection(this.current, this.index, this.options.length);
+        return null;
       case "return":
       case "enter": {
         if (this.deps.requireConfirm && !this.confirming) {
