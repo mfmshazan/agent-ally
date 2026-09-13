@@ -42,6 +42,11 @@ export class Announcer {
     this.verbosity = deps.verbosity ?? "normal";
   }
 
+  /** Speak arbitrary text (e.g. Claude's assistant replies). */
+  async say(text: string): Promise<void> {
+    await this.speaker.speak(text);
+  }
+
   /** Announce a decision when it first appears: earcon + intro + options list. */
   async announce(decision: Decision): Promise<void> {
     await this.earcon.play("blocking");

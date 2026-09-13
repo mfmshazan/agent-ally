@@ -25,9 +25,9 @@ function permissionOptions(): DecisionOption[] {
 }
 
 function asAskUserQuestion(input: Record<string, unknown>): AskUserQuestionInput | null {
-  const questions = (input as AskUserQuestionInput).questions;
+  const questions = (input as unknown as AskUserQuestionInput).questions;
   if (!Array.isArray(questions) || questions.length === 0) return null;
-  return input as AskUserQuestionInput;
+  return input as unknown as AskUserQuestionInput;
 }
 
 export function toDecision(

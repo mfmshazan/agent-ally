@@ -2,3 +2,4 @@
 import "./toDecision.test.js";
 import "./announcer.test.js";
 import "./selector.test.js";
+import "./permissionHandler.test.js";
