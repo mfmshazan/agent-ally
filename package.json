@@ -7,7 +7,7 @@
   "type": "module",
   "scripts": {
     "spike": "tsx src/spike/probe.ts",
-    "test": "tsx test/toDecision.test.ts",
+    "test": "tsx test/index.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
