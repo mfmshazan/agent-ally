@@ -67,24 +67,33 @@ function parseArgs(argv: string[]): Args {
   return { profile, silent, phone, voice, port, prompt: rest.join(" ").trim() };
 }
 
+interface LineReader {
+  /** Resolves with the typed line, or null on EOF / Ctrl+C / cancel. */
+  line: Promise<string | null>;
+  /** Abandon the read and release stdin (e.g. a phone prompt arrived first). */
+  cancel: () => void;
+}
+
 /**
- * Read one line in cooked mode, then fully close the interface so the decision
- * keyboard handler (raw mode) has clean control of stdin during the turn.
- * Resolves to null on EOF (Ctrl+D).
+ * Read one line in cooked mode. Closing the interface (on submit, EOF, Ctrl+C,
+ * or an explicit cancel) fully releases stdin so the decision keyboard handler
+ * (raw mode) has clean control during the turn.
  */
-function askLine(question: string): Promise<string | null> {
-  return new Promise((resolve) => {
-    const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-    let done = false;
-    const finish = (value: string | null): void => {
-      if (done) return;
-      done = true;
-      rl.close();
-      resolve(value);
-    };
-    rl.question(question, (answer) => finish(answer));
-    rl.on("close", () => finish(null));
-  });
+function readLine(question: string): LineReader {
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+  let done = false;
+  let resolveLine!: (value: string | null) => void;
+  const line = new Promise<string | null>((resolve) => (resolveLine = resolve));
+  const finish = (value: string | null): void => {
+    if (done) return;
+    done = true;
+    rl.close();
+    resolveLine(value);
+  };
+  rl.question(question, (answer) => finish(answer));
+  rl.on("close", () => finish(null));
+  rl.on("SIGINT", () => finish(null)); // Ctrl+C at the prompt ends the session
+  return { line, cancel: () => finish(null) };
 }
 
 /** A minimal single-consumer async queue for prompts arriving off a socket. */
@@ -118,6 +127,104 @@ class PromptQueue {
       w(null);
     }
   }
+}
+
+interface InteractiveOptions {
+  adapter: AgentAdapter;
+  baseCtx: RunContext;
+  /** Read typed prompts from the terminal (voice/full profiles). */
+  askTerminal: boolean;
+  /** Prompts submitted from the phone, if the phone may drive the agent. */
+  phoneQueue?: PromptQueue;
+  /** Present, when connected, so we can reflect busy/idle status on the phone. */
+  phoneChannel?: PhoneChannel;
+}
+
+/**
+ * One interactive loop that serves every profile. Each turn it takes the next
+ * prompt from whichever surface acts first — a line typed at the terminal or a
+ * prompt sent from the phone — then runs it to completion (so decisions during
+ * the turn own stdin uncontested) before accepting the next.
+ */
+async function runInteractive(opts: InteractiveOptions): Promise<void> {
+  const { adapter, baseCtx, askTerminal, phoneQueue, phoneChannel } = opts;
+  let resume: string | undefined;
+
+  // A single outstanding phone read, kept across iterations so a prompt that
+  // arrives mid-turn is not dropped (a fresh next() would replace the waiter).
+  let pendingPhone: Promise<{ src: "phone"; value: string | null }> | null = null;
+  let phoneReady = false;
+  const armPhone = (): void => {
+    if (phoneQueue && !pendingPhone) {
+      phoneReady = false;
+      pendingPhone = phoneQueue.next().then((value) => {
+        phoneReady = true;
+        return { src: "phone" as const, value };
+      });
+    }
+  };
+
+  // In phone-only mode Ctrl+C can't come through the terminal reader, so wire it
+  // to close the queue and end the loop.
+  const onSigint = (): void => phoneQueue?.close();
+  if (!askTerminal) process.on("SIGINT", onSigint);
+
+  phoneChannel?.status("Ready — send a prompt.", false);
+
+  try {
+    for (;;) {
+      let text: string | null;
+
+      if (!askTerminal) {
+        // Phone-only: the phone is the sole prompt source.
+        text = await (phoneQueue as PromptQueue).next();
+        if (text === null) break;
+      } else {
+        armPhone();
+        if (phoneReady && pendingPhone) {
+          // A phone prompt is already waiting — take it without opening a reader.
+          const { value } = await pendingPhone;
+          pendingPhone = null;
+          if (value === null) break;
+          text = value;
+          process.stdout.write(`\n[phone] ${text}\n`);
+        } else {
+          const reader = readLine("you> ");
+          type Won = { src: "term" | "phone"; value: string | null };
+          const fromTerminal: Promise<Won> = reader.line.then((value) => ({ src: "term", value }));
+          const racers: Promise<Won>[] = pendingPhone ? [fromTerminal, pendingPhone] : [fromTerminal];
+          const winner = await Promise.race(racers);
+          if (winner.src === "phone") {
+            reader.cancel(); // release stdin for the upcoming turn
+            pendingPhone = null;
+            if (winner.value === null) break;
+            text = winner.value;
+            process.stdout.write(`\n[phone] ${text}\n`);
+          } else {
+            if (winner.value === null) break; // Ctrl+D / Ctrl+C at the prompt
+            text = winner.value;
+          }
+        }
+      }
+
+      const trimmed = text.trim();
+      if (!trimmed) continue;
+      if (trimmed === "exit" || trimmed === "quit") break;
+
+      phoneChannel?.status("Working…", true);
+      try {
+        resume = (await adapter.run(trimmed, { ...baseCtx, resume })) || resume;
+      } catch (err) {
+        const message = (err as Error).message;
+        console.error(`\n${adapter.name} failed:`, message);
+        phoneChannel?.log("system", `Error: ${message}`);
+      }
+      phoneChannel?.status("Ready — send a prompt.", false);
+    }
+  } finally {
+    if (!askTerminal) process.off("SIGINT", onSigint);
+  }
+  console.log("\nBye.");
 }
 
 async function main(): Promise<void> {
@@ -163,53 +270,32 @@ async function main(): Promise<void> {
   };
   const baseCtx: RunContext = { present, onText };
 
+  // If the phone may drive the agent, funnel its prompts into a queue.
+  let phoneQueue: PromptQueue | undefined;
+  if (phoneChannel && surfaces.phonePrompts) {
+    phoneQueue = new PromptQueue();
+    phoneChannel.onPrompt((text) => phoneQueue!.push(text));
+  }
+
   try {
     if (args.prompt) {
       // One-shot turn.
       await adapter.run(args.prompt, baseCtx);
-    } else if (surfaces.terminal) {
-      // Terminal-driven interactive session — prompts typed at the laptop.
-      console.log('Interactive session. Type a prompt, or "exit" to quit.\n');
-      let resume: string | undefined;
-      for (;;) {
-        const line = await askLine("you> ");
-        if (line === null) break; // Ctrl+D
-        const text = line.trim();
-        if (!text) continue;
-        if (text === "exit" || text === "quit") break;
-        try {
-          resume = (await adapter.run(text, { ...baseCtx, resume })) || resume;
-        } catch (err) {
-          console.error(`\n${adapter.name} failed:`, (err as Error).message);
-        }
+    } else {
+      if (surfaces.terminal) {
+        console.log('Interactive session. Type a prompt, or "exit" to quit.');
+        if (phoneQueue) console.log("(You can also send prompts from your phone.)");
+        console.log("");
+      } else {
+        console.log("Waiting for prompts from your phone… (Ctrl+C to quit)\n");
       }
-      console.log("\nBye.");
-    } else if (phoneChannel) {
-      // Phone-driven session — prompts arrive from the phone; laptop unattended.
-      console.log("Waiting for prompts from your phone… (Ctrl+C to quit)\n");
-      const queue = new PromptQueue();
-      phoneChannel.onPrompt((text) => queue.push(text));
-      const stop = (): void => queue.close();
-      process.on("SIGINT", stop);
-      phoneChannel.status("Ready — send a prompt.", false);
-
-      let resume: string | undefined;
-      for (;;) {
-        const text = await queue.next();
-        if (text === null) break;
-        phoneChannel.status("Working…", true);
-        try {
-          resume = (await adapter.run(text, { ...baseCtx, resume })) || resume;
-          phoneChannel.status("Ready — send a prompt.", false);
-        } catch (err) {
-          const message = (err as Error).message;
-          console.error(`\n${adapter.name} failed:`, message);
-          phoneChannel.log("system", `Error: ${message}`);
-          phoneChannel.status("Ready — send a prompt.", false);
-        }
-      }
-      process.off("SIGINT", stop);
-      console.log("\nBye.");
+      await runInteractive({
+        adapter,
+        baseCtx,
+        askTerminal: surfaces.terminal,
+        phoneQueue,
+        phoneChannel,
+      });
     }
   } catch (err) {
     console.error(`\n${adapter.name} failed:`, (err as Error).message);

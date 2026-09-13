@@ -29,9 +29,12 @@ function test(name: string, fn: () => Promise<void>): Promise<void> {
 }
 
 async function run(): Promise<void> {
-  await test("allow -> { behavior: 'allow' }", async () => {
+  await test("allow -> { behavior: 'allow', updatedInput: original input }", async () => {
     const canUseTool = createCanUseTool({ present: picks("allow") });
-    assert.deepEqual(await canUseTool("Bash", { command: "ls" }, ctx), { behavior: "allow" });
+    const input = { file_path: "a.txt", old_string: "x", new_string: "y" };
+    const res = await canUseTool("Edit", input, ctx);
+    // Must echo the input back, or the SDK runs the tool with no arguments.
+    assert.deepEqual(res, { behavior: "allow", updatedInput: input });
   });
 
   await test("deny -> { behavior: 'deny', message }", async () => {

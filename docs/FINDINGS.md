@@ -25,8 +25,12 @@ type PermissionResult =
 ```
 
 Returning `{ behavior: "deny", message }` produced a `tool_result` with
-`is_error: true` and a `permission_denials` entry in the final result. Allow is
-assumed symmetric (to be confirmed when we wire a real allow).
+`is_error: true` and a `permission_denials` entry in the final result.
+
+⚠️ **Allow must echo the input.** Returning a bare `{ behavior: "allow" }` runs
+the approved tool with **no arguments** — file edits/writes fail as if "the
+system is blocking file modifications." Always return
+`{ behavior: "allow", updatedInput: input }` (the original input, unchanged).
 
 ## 3. ⭐ Questions arrive through `canUseTool`, not `onElicitation`
 

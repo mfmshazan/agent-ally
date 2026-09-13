@@ -7,14 +7,20 @@
  * in tests / headless runs so nothing tries to make noise in CI.
  *
  * Utterances are awaited, so callers get natural sequencing: speak one thing,
- * await it, speak the next — announcements never overlap.
+ * await it, speak the next — announcements never overlap. Each `speak` also
+ * takes an optional AbortSignal; aborting kills the underlying speech process
+ * immediately, so a newer utterance (e.g. after the user answers on their phone)
+ * can barge in instead of playing over the top of the old one.
  */
 
 import { spawn } from "node:child_process";
 
 export interface Speaker {
-  /** Speak `text` and resolve when the utterance finishes (or is skipped). */
-  speak(text: string): Promise<void>;
+  /**
+   * Speak `text` and resolve when the utterance finishes, is aborted, or is
+   * skipped. Never rejects. If `signal` aborts, stop speaking promptly.
+   */
+  speak(text: string, signal?: AbortSignal): Promise<void>;
 }
 
 export interface SpeakerOptions {
@@ -22,9 +28,21 @@ export interface SpeakerOptions {
   rate?: number;
 }
 
-/** Run a command, feed `text` on stdin, resolve on clean exit. Never rejects. */
-function runWithStdin(command: string, args: string[], text: string): Promise<void> {
+/**
+ * Run a command, feed `text` on stdin, resolve on clean exit. Never rejects.
+ * If `signal` aborts, the child is killed so speech stops promptly.
+ */
+function runWithStdin(
+  command: string,
+  args: string[],
+  text: string,
+  signal?: AbortSignal,
+): Promise<void> {
   return new Promise((resolve) => {
+    if (signal?.aborted) {
+      resolve();
+      return;
+    }
     let child;
     try {
       child = spawn(command, args, { stdio: ["pipe", "ignore", "ignore"] });
@@ -32,9 +50,23 @@ function runWithStdin(command: string, args: string[], text: string): Promise<vo
       resolve();
       return;
     }
-    child.on("error", () => resolve());
-    child.on("close", () => resolve());
-    child.stdin.on("error", () => resolve());
+    const onAbort = (): void => {
+      try {
+        child?.kill();
+      } catch {
+        /* already gone */
+      }
+    };
+    signal?.addEventListener("abort", onAbort, { once: true });
+    const done = (): void => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    };
+    child.on("error", done);
+    child.on("close", done);
+    child.stdin.on("error", () => {
+      /* EPIPE when killed mid-write — ignore */
+    });
     child.stdin.end(text);
   });
 }
@@ -42,7 +74,7 @@ function runWithStdin(command: string, args: string[], text: string): Promise<vo
 /** Windows SAPI via PowerShell. Text is passed on stdin to avoid quoting hell. */
 class WindowsSpeaker implements Speaker {
   constructor(private readonly rate: number) {}
-  speak(text: string): Promise<void> {
+  speak(text: string, signal?: AbortSignal): Promise<void> {
     const script =
       "Add-Type -AssemblyName System.Speech;" +
       "$s = New-Object System.Speech.Synthesis.SpeechSynthesizer;" +
@@ -52,6 +84,7 @@ class WindowsSpeaker implements Speaker {
       "powershell",
       ["-NoProfile", "-NonInteractive", "-Command", script],
       text,
+      signal,
     );
   }
 }
@@ -59,26 +92,26 @@ class WindowsSpeaker implements Speaker {
 /** macOS `say`. Reads the utterance from stdin via /dev/stdin. */
 class MacSpeaker implements Speaker {
   constructor(private readonly rate: number) {}
-  speak(text: string): Promise<void> {
+  speak(text: string, signal?: AbortSignal): Promise<void> {
     // say rate is words-per-minute; map 0 -> 180, each step ~ 15 wpm.
     const wpm = Math.max(90, 180 + this.rate * 15);
-    return runWithStdin("say", ["-r", String(wpm), "-f", "/dev/stdin"], text);
+    return runWithStdin("say", ["-r", String(wpm), "-f", "/dev/stdin"], text, signal);
   }
 }
 
 /** Linux speech-dispatcher (`spd-say`), falling back to `espeak-ng`. */
 class LinuxSpeaker implements Speaker {
   constructor(private readonly rate: number) {}
-  speak(text: string): Promise<void> {
+  speak(text: string, signal?: AbortSignal): Promise<void> {
     // spd-say -r takes -100..100; -e waits for the utterance to finish.
     const rate = Math.max(-100, Math.min(100, this.rate * 10));
-    return runWithStdin("spd-say", ["-w", "-r", String(rate), "-e"], text);
+    return runWithStdin("spd-say", ["-w", "-r", String(rate), "-e"], text, signal);
   }
 }
 
 /** No audio — prints what would be spoken. Used in tests and headless runs. */
 export class ConsoleSpeaker implements Speaker {
-  async speak(text: string): Promise<void> {
+  async speak(text: string, _signal?: AbortSignal): Promise<void> {
     console.log(`[SPEAK] ${text}`);
   }
 }

@@ -3,7 +3,8 @@
  * surfaces. Different users need different things:
  *
  *   - voice  — blind/low-vision dev at the laptop: speech + keyboard. (default)
- *   - full   — voice at the laptop PLUS a phone that can answer decisions.
+ *   - full   — voice + keyboard at the laptop AND a phone that can both send
+ *              prompts and answer decisions; whichever surface acts first wins.
  *   - phone  — the laptop is unattended; the phone is the WHOLE control surface:
  *              it sends the prompts AND approves permissions. No speech, no
  *              terminal keyboard. (This is the "just use my phone" experience.)
@@ -35,7 +36,7 @@ export interface CliOverrides {
 
 const BASE: Record<ProfileName, Surfaces> = {
   voice: { voice: true, terminal: true, phone: false, phonePrompts: false },
-  full: { voice: true, terminal: true, phone: true, phonePrompts: false },
+  full: { voice: true, terminal: true, phone: true, phonePrompts: true },
   phone: { voice: false, terminal: false, phone: true, phonePrompts: true },
 };
 

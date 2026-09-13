@@ -7,13 +7,13 @@ import { resolveSurfaces } from "../src/config/profile.js";
   assert.deepEqual(s, { voice: true, terminal: true, phone: false, phonePrompts: false });
 }
 
-// full — voice + keyboard, phone answers decisions (but keyboard drives prompts).
+// full — voice + keyboard, and the phone can both prompt and answer.
 {
   const s = resolveSurfaces("full");
   assert.equal(s.voice, true);
   assert.equal(s.terminal, true);
   assert.equal(s.phone, true);
-  assert.equal(s.phonePrompts, false);
+  assert.equal(s.phonePrompts, true);
 }
 
 // phone — phone is the whole surface: no voice, no terminal, phone drives prompts.

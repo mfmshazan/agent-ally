@@ -16,6 +16,27 @@ class CapturingSpeaker implements Speaker {
   }
 }
 
+/**
+ * A speaker whose utterances only finish when their signal aborts — lets us
+ * assert that a newer utterance interrupts (barges in on) an in-flight one.
+ */
+class BlockingSpeaker implements Speaker {
+  public aborted: string[] = [];
+  speak(text: string, signal?: AbortSignal): Promise<void> {
+    return new Promise((resolve) => {
+      if (signal?.aborted) return resolve();
+      signal?.addEventListener(
+        "abort",
+        () => {
+          this.aborted.push(text);
+          resolve();
+        },
+        { once: true },
+      );
+    });
+  }
+}
+
 let passed = 0;
 function test(name: string, fn: () => Promise<void>): Promise<void> {
   return fn().then(
@@ -89,6 +110,26 @@ async function run(): Promise<void> {
     const d = toDecision("Bash", { command: "echo hello | grep h" }, { toolUseID: "x" });
     await a.details(d);
     assert.match(speaker.said[0], /Full command: echo hello \| grep h/);
+  });
+
+  await test("a new utterance barges in on one still playing", async () => {
+    const speaker = new BlockingSpeaker();
+    const a = new Announcer({ speaker, earcon: new SilentEarcon() });
+    const first = a.say("first, long announcement"); // hangs until aborted
+    const second = a.say("second"); // begins a new utterance → aborts the first
+    await first;
+    assert.deepEqual(speaker.aborted, ["first, long announcement"]);
+    a.stop(); // release the second so the test doesn't hang
+    await second;
+  });
+
+  await test("stop() silences the current utterance", async () => {
+    const speaker = new BlockingSpeaker();
+    const a = new Announcer({ speaker, earcon: new SilentEarcon() });
+    const p = a.say("talking…");
+    a.stop();
+    await p;
+    assert.deepEqual(speaker.aborted, ["talking…"]);
   });
 
   console.log(`\n${passed} passed`);

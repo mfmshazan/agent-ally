@@ -38,8 +38,16 @@ export class TerminalChannel implements DecisionChannel {
   }
 
   async present(decision: Decision, signal: AbortSignal): Promise<DecisionOption> {
-    await this.announcer.announce(decision);
-    const requireConfirm = decision.kind === "permission" && decision.riskLevel === "high";
-    return this.prompt(decision, { requireConfirm, signal });
+    // If another channel (the phone) answers first, silence our speech at once
+    // rather than letting the announcement play over the next thing spoken.
+    const onAbort = (): void => this.announcer.stop();
+    signal.addEventListener("abort", onAbort, { once: true });
+    try {
+      await this.announcer.announce(decision);
+      const requireConfirm = decision.kind === "permission" && decision.riskLevel === "high";
+      return await this.prompt(decision, { requireConfirm, signal });
+    } finally {
+      signal.removeEventListener("abort", onAbort);
+    }
   }
 }

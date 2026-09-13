@@ -36,38 +36,63 @@ export class Announcer {
   private readonly earcon: Earcon;
   private readonly verbosity: Verbosity;
 
+  /**
+   * Controls the utterance currently playing. Starting a new top-level utterance
+   * aborts this, so a newer thing to say (a navigation move, an answer landing
+   * from the phone, the next reply) interrupts the old speech instead of
+   * overlapping it. All the speaks within one utterance share this signal, so an
+   * utterance never cuts itself off mid-sentence.
+   */
+  private current: AbortController | null = null;
+
   constructor(deps: AnnouncerDeps) {
     this.speaker = deps.speaker;
     this.earcon = deps.earcon;
     this.verbosity = deps.verbosity ?? "normal";
   }
 
+  /** Begin a fresh utterance, interrupting any speech still playing. */
+  private begin(): AbortSignal {
+    this.current?.abort();
+    const ac = new AbortController();
+    this.current = ac;
+    return ac.signal;
+  }
+
+  /** Stop whatever is currently being spoken (e.g. another channel answered). */
+  stop(): void {
+    this.current?.abort();
+    this.current = null;
+  }
+
   /** Speak arbitrary text (e.g. Claude's assistant replies). */
   async say(text: string): Promise<void> {
-    await this.speaker.speak(text);
+    await this.speaker.speak(text, this.begin());
   }
 
   /** Announce a decision when it first appears: earcon + intro + options + hint. */
   async announce(decision: Decision): Promise<void> {
+    const signal = this.begin();
     await this.earcon.play("blocking");
-    await this.speakBody(decision);
-    if (this.verbosity !== "terse") await this.speaker.speak(this.hint(decision));
+    await this.speakBody(decision, signal);
+    if (this.verbosity !== "terse") await this.speaker.speak(this.hint(decision), signal);
   }
 
   /** Re-announce on demand (the "R to repeat" affordance). No earcon. */
   async repeat(decision: Decision): Promise<void> {
-    await this.speakBody(decision);
-    await this.speaker.speak(this.hint(decision));
+    const signal = this.begin();
+    await this.speakBody(decision, signal);
+    await this.speaker.speak(this.hint(decision), signal);
   }
 
-  private async speakBody(decision: Decision): Promise<void> {
+  private async speakBody(decision: Decision, signal: AbortSignal): Promise<void> {
     if (decision.kind === "permission") {
       const risk = decision.riskLevel === "low" ? "" : ` ${riskPhrase(decision.riskLevel)}`;
-      await this.speaker.speak(`Permission needed. ${decision.title}.${risk}`);
+      await this.speaker.speak(`Permission needed. ${decision.title}.${risk}`, signal);
     } else {
-      await this.speaker.speak(`Claude is asking. ${decision.title}.`);
+      await this.speaker.speak(`Claude is asking. ${decision.title}.`, signal);
     }
-    await this.speakOptionList(decision.options);
+    await this.speakOptionList(decision.options, signal);
   }
 
   private hint(decision: Decision): string {
@@ -79,9 +104,9 @@ export class Announcer {
     return base;
   }
 
-  private async speakOptionList(options: DecisionOption[]): Promise<void> {
+  private async speakOptionList(options: DecisionOption[], signal: AbortSignal): Promise<void> {
     const parts = options.map((o, i) => `${i + 1}, ${o.label}`);
-    await this.speaker.speak(`Options: ${parts.join(". ")}.`);
+    await this.speaker.speak(`Options: ${parts.join(". ")}.`, signal);
   }
 
   /** Speak the currently-highlighted option. Called on every navigation move. */
@@ -89,32 +114,35 @@ export class Announcer {
     const position = `${index + 1} of ${total}`;
     const detail =
       this.verbosity === "verbose" && option.description ? `. ${option.description}` : "";
-    await this.speaker.speak(`${position}, ${option.label}${detail}.`);
+    await this.speaker.speak(`${position}, ${option.label}${detail}.`, this.begin());
   }
 
   /** Ask for an explicit second press before committing a high-stakes choice. */
   async confirm(option: DecisionOption): Promise<void> {
-    await this.speaker.speak(`Confirm ${option.label}? Press enter again to confirm.`);
+    await this.speaker.speak(`Confirm ${option.label}? Press enter again to confirm.`, this.begin());
   }
 
   /** A choice has been committed. */
   async committed(option: DecisionOption): Promise<void> {
+    const signal = this.begin();
     await this.earcon.play("committed");
-    await this.speaker.speak(`${option.label} selected.`);
+    await this.speaker.speak(`${option.label} selected.`, signal);
   }
 
   /** Read the full shell command on demand (the "details" affordance). */
   async details(decision: Decision): Promise<void> {
+    const signal = this.begin();
     if (decision.kind === "permission" && decision.command) {
-      await this.speaker.speak(`Full command: ${decision.command}`);
+      await this.speaker.speak(`Full command: ${decision.command}`, signal);
     } else {
-      await this.speaker.speak("No further details.");
+      await this.speaker.speak("No further details.", signal);
     }
   }
 
   /** Something went wrong (tool failed, couldn't present a decision, etc.). */
   async failure(message: string): Promise<void> {
+    const signal = this.begin();
     await this.earcon.play("failure");
-    await this.speaker.speak(message);
+    await this.speaker.speak(message, signal);
   }
 }

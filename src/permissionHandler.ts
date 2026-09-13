@@ -36,7 +36,12 @@ export function createCanUseTool(deps: HandlerDeps) {
           updatedInput: buildAnswerInput(decision.raw.input, chosen.label),
         };
       }
-      if (chosen.value === "allow") return { behavior: "allow" };
+      // Echo the original input back on allow. The SDK runs the approved tool
+      // with `updatedInput`; omitting it makes edits/writes run with no
+      // arguments and fail ("the system is blocking file modifications").
+      if (chosen.value === "allow") {
+        return { behavior: "allow", updatedInput: decision.raw.input };
+      }
       return { behavior: "deny", message: "Denied by the user via agent-ally." };
     } catch {
       // Ctrl+C, all channels failed, or any presentation error -> fail safe.

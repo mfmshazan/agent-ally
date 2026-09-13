@@ -72,15 +72,18 @@ Not everyone needs the same surfaces. Pick a profile:
 | Profile | Who it's for | Speech | Keyboard | Phone |
 |---------|--------------|:------:|:--------:|:-----:|
 | `voice` *(default)* | Blind/low-vision dev at the laptop | ✅ | ✅ | — |
-| `full` | Voice at the laptop, phone helps answer | ✅ | ✅ | answers |
+| `full` | Voice at the laptop **and** phone | ✅ | ✅ | **prompts + answers** |
 | `phone` | Laptop unattended — the phone is everything | — | — | **prompts + answers** |
 
 ```bash
 agent-ally                          # voice profile (default)
-agent-ally --profile full           # voice + keyboard, phone answers decisions
+agent-ally --profile full           # voice + keyboard AND phone (either can act)
 agent-ally --profile phone          # drive it entirely from your phone
 agent-ally --profile phone --voice  # phone-driven, but also speak aloud
 ```
+
+In `full`, a prompt can come from **either** the keyboard or the phone —
+whichever you use first drives the next turn; the other surface stays ready.
 
 In the **phone** profile the phone page shows a text box: type what you want the
 agent to do, hit **Send**, then approve or answer right there — no keyboard, no
