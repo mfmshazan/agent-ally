@@ -1,5 +1,5 @@
 /**
- * Decision Interceptor — the heart of claude-ally.
+ * Decision Interceptor — the heart of agent-ally.
  *
  * Normalizes the raw positional args the Agent SDK hands `canUseTool` into a
  * single uniform `Decision` shape the announcer + input handler operate on.

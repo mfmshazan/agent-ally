@@ -1,7 +1,7 @@
 # MVP-0 Spike — the go/no-go gate
 
 Before building anything real, we must confirm **how the Claude Agent SDK hands
-us the two decision points** claude-ally intends to own. If these don't arrive as
+us the two decision points** agent-ally intends to own. If these don't arrive as
 structured callbacks, the whole "structured, not scraped" architecture changes.
 
 ## What the probe checks

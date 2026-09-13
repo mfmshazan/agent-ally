@@ -1,5 +1,6 @@
+#!/usr/bin/env node
 /**
- * claude-ally CLI — run a Claude Code session whose decisions are driven
+ * agent-ally CLI — run a Claude Code session whose decisions are driven
  * accessibly by speech + keyboard, and optionally from your phone.
  *
  * Usage:
@@ -18,7 +19,8 @@ import { TerminalChannel } from "./channels/terminal.js";
 import { PhoneChannel } from "./channels/phone.js";
 import type { DecisionChannel } from "./channels/types.js";
 import { createPresenter } from "./coordinator.js";
-import { createCanUseTool } from "./permissionHandler.js";
+import { ClaudeAdapter } from "./adapters/claude.js";
+import type { AgentAdapter } from "./adapters/types.js";
 
 interface Args {
   silent: boolean;
@@ -50,15 +52,6 @@ async function main(): Promise<void> {
     return;
   }
 
-  let query: typeof import("@anthropic-ai/claude-agent-sdk").query;
-  try {
-    ({ query } = await import("@anthropic-ai/claude-agent-sdk"));
-  } catch {
-    console.error("Run `npm install` first (the Agent SDK isn't installed).");
-    process.exitCode = 1;
-    return;
-  }
-
   const announcer = new Announcer({
     speaker: createSpeaker({ silent }),
     earcon: createEarcon({ silent }),
@@ -77,24 +70,19 @@ async function main(): Promise<void> {
     } catch {
       /* QR is optional */
     }
-    console.log("⚠️  Anyone with this link can approve Claude's actions — use on a trusted network only.\n");
+    console.log("⚠️  Anyone with this link can approve the agent's actions — use on a trusted network only.\n");
     await announcer.say("Phone control ready. Scan the code to connect.");
     channels.push(phoneChannel);
   }
 
-  const canUseTool = createCanUseTool({ present: createPresenter(channels) });
-  const options: Record<string, unknown> = { permissionMode: "default", canUseTool };
+  const present = createPresenter(channels);
+  const adapter: AgentAdapter = new ClaudeAdapter();
 
   try {
-    for await (const message of query({ prompt, options } as never)) {
-      const m = message as Record<string, unknown>;
-      if (m.type === "assistant") {
-        const content = (m.message as { content?: Array<{ type: string; text?: string }> })?.content;
-        for (const block of content ?? []) {
-          if (block.type === "text" && block.text) await announcer.say(block.text);
-        }
-      }
-    }
+    await adapter.run(prompt, { present, onText: (t) => announcer.say(t) });
+  } catch (err) {
+    console.error(`\n${adapter.name} failed:`, (err as Error).message);
+    process.exitCode = 1;
   } finally {
     await phoneChannel?.close();
   }

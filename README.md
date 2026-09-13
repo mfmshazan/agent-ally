@@ -1,91 +1,81 @@
-# claude-ally
+# agent-ally
 
-**An accessibility-first control layer for Claude Code's CLI.**
+**An accessibility-first control layer for AI coding agents — driven by speech,
+keyboard, and your phone.**
 
-Claude Code narrates _what it did_ reasonably well for screen-reader users (thanks to
-community tools like `claude-sonar` and `claude-a11y`). What's still missing is the
-**interactive decision loop** — the blocking, high-stakes moments where Claude asks:
+The name is a pun: **a11y** (accessibility) + **ally** (a helper on your side).
 
-- _"Can I run this shell command?"_ (permission prompts)
-- _"Which of these options do you want?"_ (multiple-choice questions)
+AI coding agents pause to ask the developer things — *"Can I run this command?"*,
+*"Which option do you want?"* — and in the terminal those are arrow-key widgets
+that screen readers handle poorly. They're also the **highest-stakes** moments
+(approving a shell command, a file write). agent-ally makes those **decision
+points** fully drivable without sight:
 
-These are arrow-key terminal widgets that screen readers handle poorly. `claude-ally`
-makes those decision points fully **screen-reader drivable**:
+- 🔊 **Announced** the instant they appear (text-to-speech + distinct earcons)
+- 🔢 **Options read out** as a numbered list; **current selection spoken** on every move
+- ✅ **Confirmed aloud** before committing (high-risk actions need a second press)
+- 🔁 **Press `R` to repeat** anything you missed
+- 📱 **Answerable from your phone** over your Wi-Fi (accessible web page), or the
+  laptop — whichever responds first wins; the work stays on the laptop
 
-- 🔊 **Announced** the instant they appear
-- 🔢 **Options read out** as a linear, numbered list
-- ➡️ **Current selection spoken** on every keystroke
-- ✅ **Choice confirmed aloud** before it commits (extra confirm for risky actions)
-- 🔔 **Distinct earcons** for _blocking_ (needs you) vs _committed_ vs _failure_
+## Why "agent" not "claude"
 
-## Why this exists
+The accessibility engine (speech, keyboard, phone) is **agent-agnostic** — it
+just needs a decision to present. Only the *interception* is agent-specific, so
+agent-ally is built around a pluggable **adapter** seam:
 
-Based on a real feature request from a blind accessibility architect
-([anthropics/claude-code#70425](https://github.com/anthropics/claude-code/issues/70425)).
-Existing tools solve **output narration** (one-way). `claude-ally` owns the
-**interactive control loop** — the part that lets a blind developer _drive_ the agent,
-not just hear it.
+```
+Adapter (per agent)              Accessibility engine (universal)
+  └─ Claude Code (flagship) ──►  announce · navigate · phone · answer
+     (future: other open agents, or a generic terminal wrapper)
+```
+
+Today the **Claude Code adapter** (via the Agent SDK's `canUseTool`) is the solid,
+validated one. Other agents can plug in as they expose a decision hook.
 
 ## Status
 
-🚧 Early development. **v0.3 shipped.** Both decision types are driven by speech
-+ keyboard through the Agent SDK's `canUseTool` callback:
+🚧 Early development.
 
-- **Permission prompts** — announce → navigate → spoken confirm (high-risk needs
-  two presses) → allow/deny.
-- **Multiple-choice questions** (`AskUserQuestion`) — announce → navigate →
-  select → the choice is returned to Claude as the answer.
+- **v0.1** — permission prompts fully driven by speech + keyboard.
+- **v0.3** — multiple-choice questions (`AskUserQuestion`) answered, not just announced.
+- **v0.4** — answer decisions from your phone (LAN, token-secured).
+- **Now** — installable command + adapter seam (Claude is the first adapter).
 
-**v0.4 adds phone control.** Run with `--phone` and a token-secured page is
-served on your LAN; scan the QR, and decisions can be answered from your phone
-(big accessible buttons) *or* the laptop — whichever responds first wins. The
-work still runs on the laptop.
+Both interception mechanisms were validated by spikes first — see
+[docs/FINDINGS.md](docs/FINDINGS.md).
 
-Both mechanisms were validated by spikes first (see [docs/FINDINGS.md](docs/FINDINGS.md)).
-**Next:** config (voice/rate/verbosity), multi-select questions, tunnel support
-for off-network phones, and recruiting the GitHub-issue author as a test user.
-
-### Run it
+## Run it
 
 ```bash
 npm install
 npm start -- "create a file hello.txt that says hi"     # terminal only
 npm start -- --phone "ask me to pick cat or dog"        # + phone (scan the QR)
-npm test                                                 # 25 tests, no tokens
+npm test                                                 # no tokens (replays fixtures)
 ```
 
-> ⚠️ `--phone` lets any device with the printed link approve Claude's actions.
-> Use it only on a trusted network.
-
-### Run it
+Install as a command you can run in **any project**:
 
 ```bash
-npm install
-npm start -- "create a file hello.txt that says hi"   # triggers a permission prompt
-npm start -- --silent "…"                              # no audio; prints [SPEAK] lines
-npm test                                               # 20 tests, no tokens
+npm run build && npm link     # then, from any project folder:
+agent-ally --phone "your prompt"
 ```
 
-Requires Claude Code auth on this machine (the SDK reuses it).
+Requires Claude Code auth on this machine (the adapter reuses it).
 
-## Planned architecture
+> ⚠️ `--phone` lets any device with the printed link approve the agent's actions.
+> Use it only on a trusted network.
 
-`claude-ally` runs Claude Code as an **engine subprocess** (via the Agent SDK /
-`stream-json`) and renders its decision points for speech + keyboard, instead of
-scraping the terminal UI.
+## Keys
 
-```
-REPL (your prompt) → Claude engine (canUseTool) → Decision Interceptor
-     → Announcer (TTS + earcons) ↔ Input Handler (accessible keyboard nav)
-```
-
-| Component | Job |
-|-----------|-----|
-| Engine adapter | Drives Claude Code via the SDK; registers the permission callback |
-| Decision Interceptor | Normalizes permission/question events into a uniform shape |
-| Announcer | Speaks decisions, humanizes identifiers, plays earcons |
-| Input Handler | Accessible keyboard navigation + spoken selection |
-| Policy / Safety | Risk classification; fail-safe deny on ambiguity |
+| Key | Action |
+|-----|--------|
+| ↑ / ↓ (or `j`/`k`) | Move between options (each spoken) |
+| `1`–`9` | Jump to an option |
+| `R` | Repeat the whole decision |
+| `D` | Read the full shell command |
+| Enter | Select (high-risk needs a 2nd Enter) |
+| Ctrl+C | Cancel → denies safely |
 
 ## License
 

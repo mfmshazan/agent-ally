@@ -1,5 +1,5 @@
 /**
- * Types for claude-ally, grounded in the REAL shapes observed in the MVP-0
+ * Types for agent-ally, grounded in the REAL shapes observed in the MVP-0
  * spike (see docs/FINDINGS.md), not the paraphrased docs.
  */
 

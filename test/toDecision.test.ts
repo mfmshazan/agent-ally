@@ -26,14 +26,14 @@ function test(name: string, fn: () => void): void {
 test("Bash echo -> medium-risk permission decision", () => {
   const d = toDecision(
     "Bash",
-    { command: "echo claude-ally-probe", description: "Echo claude-ally-probe" },
+    { command: "echo agent-ally-probe", description: "Echo agent-ally-probe" },
     { toolUseID: "toolu_01Tduna3QZyi26dSMcEtBYH1" },
   );
   assert.equal(d.kind, "permission");
   if (d.kind !== "permission") return;
   assert.equal(d.toolUseId, "toolu_01Tduna3QZyi26dSMcEtBYH1");
   assert.equal(d.riskLevel, "medium");
-  assert.equal(d.command, "echo claude-ally-probe");
+  assert.equal(d.command, "echo agent-ally-probe");
   assert.match(d.title, /run a shell command/);
   assert.deepEqual(
     d.options.map((o) => o.value),

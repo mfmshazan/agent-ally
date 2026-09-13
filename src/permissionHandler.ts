@@ -37,10 +37,10 @@ export function createCanUseTool(deps: HandlerDeps) {
         };
       }
       if (chosen.value === "allow") return { behavior: "allow" };
-      return { behavior: "deny", message: "Denied by the user via claude-ally." };
+      return { behavior: "deny", message: "Denied by the user via agent-ally." };
     } catch {
       // Ctrl+C, all channels failed, or any presentation error -> fail safe.
-      return { behavior: "deny", message: "Cancelled via claude-ally." };
+      return { behavior: "deny", message: "Cancelled via agent-ally." };
     }
   };
 }

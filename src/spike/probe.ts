@@ -1,8 +1,8 @@
 /**
- * MVP-0 spike — the go/no-go probe for claude-ally.
+ * MVP-0 spike — the go/no-go probe for agent-ally.
  *
  * Goal: discover the EXACT runtime shapes the Claude Agent SDK hands us at the
- * two decision points claude-ally will own:
+ * two decision points agent-ally will own:
  *   1. permission requests  -> `canUseTool` callback
  *   2. multiple-choice questions / elicitation -> `onElicitation` callback
  *
@@ -47,7 +47,7 @@ function record(label: string, payload: unknown): void {
 }
 
 async function main(): Promise<void> {
-  writeFileSync(LOG, `claude-ally spike run @ ${new Date().toISOString()}\n`);
+  writeFileSync(LOG, `agent-ally spike run @ ${new Date().toISOString()}\n`);
 
   let query: typeof import("@anthropic-ai/claude-agent-sdk").query;
   try {
@@ -66,7 +66,7 @@ async function main(): Promise<void> {
   //  - the shell command triggers a Bash permission request (-> canUseTool)
   //  - the explicit "ask me" nudges an AskUserQuestion-style prompt (-> onElicitation)
   const prompt =
-    "First, run the shell command `echo claude-ally-probe`. " +
+    "First, run the shell command `echo agent-ally-probe`. " +
     "Then ask me to choose between two options: 'red' or 'blue'. " +
     "Do not do anything else.";
 

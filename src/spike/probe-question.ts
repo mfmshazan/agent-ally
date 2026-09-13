@@ -44,7 +44,7 @@ function record(label: string, payload: unknown): void {
 }
 
 async function main(): Promise<void> {
-  writeFileSync(LOG, `claude-ally question-answer spike @ ${new Date().toISOString()}\n`);
+  writeFileSync(LOG, `agent-ally question-answer spike @ ${new Date().toISOString()}\n`);
 
   let query: typeof import("@anthropic-ai/claude-agent-sdk").query;
   try {
