@@ -15,11 +15,20 @@ export interface RunContext {
   present: PresentFn;
   /** Called with the agent's user-facing text so it can be spoken. */
   onText?: (text: string) => void | Promise<void>;
+  /**
+   * Resume a prior session so context carries across turns in interactive mode.
+   * Adapters that can't resume may ignore this.
+   */
+  resume?: string;
 }
 
 export interface AgentAdapter {
   /** Short identifier, e.g. "claude-code". */
   readonly name: string;
-  /** Run one request to completion, routing decisions through `ctx.present`. */
-  run(prompt: string, ctx: RunContext): Promise<void>;
+  /**
+   * Run one request (turn) to completion, routing decisions through
+   * `ctx.present`. Returns a session id the caller can pass back as
+   * `ctx.resume` on the next turn to keep context (or void if unsupported).
+   */
+  run(prompt: string, ctx: RunContext): Promise<string | void>;
 }

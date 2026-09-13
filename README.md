@@ -58,7 +58,9 @@ Install as a command you can run in **any project**:
 
 ```bash
 npm run build && npm link     # then, from any project folder:
-agent-ally --phone "your prompt"
+agent-ally "your prompt"       # one turn
+agent-ally                     # interactive session (type prompts, shared context)
+agent-ally --phone             # + phone control
 ```
 
 Requires Claude Code auth on this machine (the adapter reuses it).

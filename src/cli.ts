@@ -1,17 +1,20 @@
 #!/usr/bin/env node
 /**
- * agent-ally CLI — run a Claude Code session whose decisions are driven
- * accessibly by speech + keyboard, and optionally from your phone.
+ * agent-ally CLI — drive an AI coding agent accessibly (speech + keyboard +
+ * phone). Give a prompt for a single turn, or omit it for an interactive
+ * session that keeps context across turns.
  *
  * Usage:
- *   npm start -- "your prompt"                 # terminal only
- *   npm start -- --phone "your prompt"         # also answerable from your phone
- *   npm start -- --phone --port 5000 "…"       # custom port
- *   npm start -- --silent "…"                  # no audio; prints [SPEAK] lines
+ *   agent-ally "your prompt"              # one turn, then exit
+ *   agent-ally                            # interactive session (type prompts)
+ *   agent-ally --phone                    # also answerable from your phone
+ *   agent-ally --phone --port 5000        # custom port
+ *   agent-ally --silent "…"               # no audio; prints [SPEAK] lines
  *
- * Requires Claude Code auth already set up on this machine (the SDK reuses it).
+ * Requires Claude Code auth already set up on this machine (the adapter reuses it).
  */
 
+import readline from "node:readline";
 import { Announcer } from "./announcer/announcer.js";
 import { createSpeaker } from "./announcer/tts.js";
 import { createEarcon } from "./announcer/earcons.js";
@@ -20,7 +23,7 @@ import { PhoneChannel } from "./channels/phone.js";
 import type { DecisionChannel } from "./channels/types.js";
 import { createPresenter } from "./coordinator.js";
 import { ClaudeAdapter } from "./adapters/claude.js";
-import type { AgentAdapter } from "./adapters/types.js";
+import type { AgentAdapter, RunContext } from "./adapters/types.js";
 
 interface Args {
   silent: boolean;
@@ -44,13 +47,28 @@ function parseArgs(argv: string[]): Args {
   return { silent, phone, port, prompt: rest.join(" ").trim() };
 }
 
+/**
+ * Read one line in cooked mode, then fully close the interface so the decision
+ * keyboard handler (raw mode) has clean control of stdin during the turn.
+ * Resolves to null on EOF (Ctrl+D).
+ */
+function askLine(question: string): Promise<string | null> {
+  return new Promise((resolve) => {
+    const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+    let done = false;
+    const finish = (value: string | null): void => {
+      if (done) return;
+      done = true;
+      rl.close();
+      resolve(value);
+    };
+    rl.question(question, (answer) => finish(answer));
+    rl.on("close", () => finish(null));
+  });
+}
+
 async function main(): Promise<void> {
   const { silent, phone, port, prompt } = parseArgs(process.argv.slice(2));
-  if (!prompt) {
-    console.error('Usage: npm start -- [--phone] [--port N] [--silent] "your prompt"');
-    process.exitCode = 1;
-    return;
-  }
 
   const announcer = new Announcer({
     speaker: createSpeaker({ silent }),
@@ -77,9 +95,30 @@ async function main(): Promise<void> {
 
   const present = createPresenter(channels);
   const adapter: AgentAdapter = new ClaudeAdapter();
+  const baseCtx: RunContext = { present, onText: (t) => announcer.say(t) };
 
   try {
-    await adapter.run(prompt, { present, onText: (t) => announcer.say(t) });
+    if (prompt) {
+      // One-shot turn.
+      await adapter.run(prompt, baseCtx);
+    } else {
+      // Interactive session — keep context across turns via the returned id.
+      console.log('Interactive session. Type a prompt, or "exit" to quit.\n');
+      let resume: string | undefined;
+      for (;;) {
+        const line = await askLine("you> ");
+        if (line === null) break; // Ctrl+D
+        const text = line.trim();
+        if (!text) continue;
+        if (text === "exit" || text === "quit") break;
+        try {
+          resume = (await adapter.run(text, { ...baseCtx, resume })) || resume;
+        } catch (err) {
+          console.error(`\n${adapter.name} failed:`, (err as Error).message);
+        }
+      }
+      console.log("\nBye.");
+    }
   } catch (err) {
     console.error(`\n${adapter.name} failed:`, (err as Error).message);
     process.exitCode = 1;
