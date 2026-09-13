@@ -1,0 +1,5 @@
+node_modules/
+dist/
+*.log
+src/spike/observations.log
+.DS_Store
