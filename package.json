@@ -8,6 +8,7 @@
   "scripts": {
     "start": "tsx src/cli.ts",
     "spike": "tsx src/spike/probe.ts",
+    "spike:q": "tsx src/spike/probe-question.ts",
     "test": "tsx test/index.ts",
     "typecheck": "tsc --noEmit"
   },
