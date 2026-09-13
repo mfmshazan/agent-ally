@@ -3,6 +3,9 @@
  *
  * Separated from the Selector so the state machine stays testable without a
  * TTY. This file owns raw-mode stdin, readline keypress decoding, and cleanup.
+ *
+ * Accepts an AbortSignal so a coordinator can cancel this prompt when another
+ * channel (e.g. the phone) answers first.
  */
 
 import readline from "node:readline";
@@ -13,14 +16,13 @@ import { Selector, type Key } from "./selector.js";
 export interface PromptDeps {
   announcer: Announcer;
   requireConfirm: boolean;
+  signal?: AbortSignal;
   input?: NodeJS.ReadStream;
-  output?: NodeJS.WriteStream;
 }
 
 /**
  * Announce + navigate a decision on the terminal, resolving to the committed
- * option. Ctrl+C rejects with an AbortError-style error so callers can fail safe
- * (deny).
+ * option. Rejects on Ctrl+C or when `signal` aborts so callers can fail safe.
  */
 export function promptDecision(decision: Decision, deps: PromptDeps): Promise<DecisionOption> {
   const input = deps.input ?? process.stdin;
@@ -30,6 +32,11 @@ export function promptDecision(decision: Decision, deps: PromptDeps): Promise<De
   });
 
   return new Promise<DecisionOption>((resolve, reject) => {
+    if (deps.signal?.aborted) {
+      reject(new Error("aborted"));
+      return;
+    }
+
     readline.emitKeypressEvents(input);
     const wasRaw = input.isRaw ?? false;
     if (input.isTTY) input.setRawMode(true);
@@ -41,8 +48,14 @@ export function promptDecision(decision: Decision, deps: PromptDeps): Promise<De
 
     const cleanup = (): void => {
       input.off("keypress", onKeypress);
+      deps.signal?.removeEventListener("abort", onAbort);
       if (input.isTTY) input.setRawMode(wasRaw);
       input.pause();
+    };
+
+    const onAbort = (): void => {
+      cleanup();
+      reject(new Error("aborted"));
     };
 
     const onKeypress = (_str: string, key: Key & { ctrl?: boolean }): void => {
@@ -60,6 +73,7 @@ export function promptDecision(decision: Decision, deps: PromptDeps): Promise<De
       });
     };
 
+    deps.signal?.addEventListener("abort", onAbort, { once: true });
     input.on("keypress", onKeypress);
     chain = chain.then(() => selector.start());
   });

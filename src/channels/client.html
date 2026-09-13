@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>claude-ally</title>
+    <style>
+      :root { color-scheme: dark light; }
+      * { box-sizing: border-box; }
+      body {
+        font-family: system-ui, -apple-system, sans-serif;
+        margin: 0; padding: 1.25rem;
+        background: #12131a; color: #f2f3f7;
+        min-height: 100vh;
+      }
+      h1 { font-size: 1rem; font-weight: 600; opacity: 0.7; margin: 0 0 1rem; }
+      #status { opacity: 0.7; font-size: 0.95rem; }
+      #title { font-size: 1.4rem; line-height: 1.35; margin: 0.5rem 0 0.25rem; }
+      .risk { display: inline-block; font-weight: 700; padding: 0.15rem 0.6rem; border-radius: 999px; font-size: 0.8rem; margin-bottom: 0.5rem; }
+      .risk.high { background: #ff4d4f; color: #fff; }
+      .risk.medium { background: #d89614; color: #111; }
+      .risk.low { background: #2f6f3e; color: #fff; }
+      #command { background: #000; color: #7fd; padding: 0.6rem 0.8rem; border-radius: 8px; font-family: ui-monospace, monospace; font-size: 0.85rem; white-space: pre-wrap; word-break: break-all; margin: 0.5rem 0; }
+      button {
+        display: block; width: 100%; margin: 0.6rem 0; padding: 1.1rem;
+        font-size: 1.15rem; font-weight: 600; border: 0; border-radius: 12px;
+        background: #2b6ef2; color: #fff; cursor: pointer;
+      }
+      button.secondary { background: #2a2d3a; color: #f2f3f7; }
+      button .desc { display: block; font-weight: 400; font-size: 0.9rem; opacity: 0.85; margin-top: 0.2rem; }
+      button.confirm { background: #ff4d4f; }
+    </style>
+  </head>
+  <body>
+    <h1>claude-ally &middot; remote</h1>
+    <p id="status" role="status" aria-live="polite">Connecting&hellip;</p>
+    <div id="decision" aria-live="assertive"></div>
+
+    <script>
+      const token = new URLSearchParams(location.search).get("token");
+      const statusEl = document.getElementById("status");
+      const decisionEl = document.getElementById("decision");
+      let current = null; // { toolUseId, options, riskLevel }
+      let armed = null; // value awaiting a confirm tap (high-risk)
+      let ws;
+
+      function connect() {
+        ws = new WebSocket(`ws://${location.host}/?token=${token}`);
+        ws.onopen = () => (statusEl.textContent = "Connected. Waiting for Claude…");
+        ws.onclose = () => {
+          statusEl.textContent = "Disconnected. Reconnecting…";
+          clearDecision();
+          setTimeout(connect, 1500);
+        };
+        ws.onmessage = (e) => {
+          const msg = JSON.parse(e.data);
+          if (msg.type === "decision") render(msg.decision);
+          else if (msg.type === "clear") clearDecision();
+        };
+      }
+
+      function clearDecision() {
+        current = null;
+        armed = null;
+        decisionEl.innerHTML = "";
+        statusEl.textContent = "Waiting for Claude…";
+      }
+
+      function answer(value) {
+        const opt = current.options.find((o) => o.value === value);
+        // High-risk permission: require a second tap to confirm an "allow".
+        if (current.riskLevel === "high" && value === "allow" && armed !== value) {
+          armed = value;
+          render(current, `Tap again to confirm: ${opt.label}`);
+          return;
+        }
+        ws.send(JSON.stringify({ type: "answer", toolUseId: current.toolUseId, value }));
+        statusEl.textContent = `Sent: ${opt.label}`;
+        decisionEl.innerHTML = "";
+        current = null;
+        armed = null;
+      }
+
+      function render(decision, note) {
+        current = decision;
+        statusEl.textContent = decision.kind === "question" ? "Claude is asking:" : "Permission needed:";
+
+        const frag = document.createDocumentFragment();
+        const title = document.createElement("p");
+        title.id = "title";
+        title.textContent = decision.title;
+        frag.appendChild(title);
+
+        if (decision.riskLevel) {
+          const r = document.createElement("span");
+          r.className = "risk " + decision.riskLevel;
+          r.textContent = decision.riskLevel.toUpperCase() + " RISK";
+          frag.appendChild(r);
+        }
+        if (decision.command) {
+          const c = document.createElement("div");
+          c.id = "command";
+          c.textContent = decision.command;
+          frag.appendChild(c);
+        }
+        if (note) {
+          const n = document.createElement("p");
+          n.textContent = note;
+          frag.appendChild(n);
+        }
+
+        decision.options.forEach((o, i) => {
+          const b = document.createElement("button");
+          if (o.value === "deny") b.className = "secondary";
+          if (note && armed === o.value) b.className = "confirm";
+          b.setAttribute("aria-label", o.description ? `${o.label}. ${o.description}` : o.label);
+          b.innerHTML = o.label + (o.description ? `<span class="desc">${o.description}</span>` : "");
+          b.onclick = () => answer(o.value);
+          frag.appendChild(b);
+          if (i === 0) setTimeout(() => b.focus(), 0);
+        });
+
+        decisionEl.innerHTML = "";
+        decisionEl.appendChild(frag);
+      }
+
+      if (!token) statusEl.textContent = "Missing token in the URL.";
+      else connect();
+    </script>
+  </body>
+</html>

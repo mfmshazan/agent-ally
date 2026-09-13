@@ -1,34 +1,17 @@
 /**
- * Permission handler tests — inject a fake prompt so no TTY/audio is needed.
- * Verifies the canUseTool return contract our spike confirmed.
+ * Permission handler tests — inject a `present` function (the coordinator) so
+ * no TTY/audio/channels are needed. Verifies the canUseTool return contract.
  */
 
 import assert from "node:assert/strict";
-import { createCanUseTool, type PromptFn } from "../src/permissionHandler.js";
-import type { Announcer } from "../src/announcer/announcer.js";
+import { createCanUseTool } from "../src/permissionHandler.js";
+import type { PresentFn } from "../src/coordinator.js";
 import type { CanUseToolContext, DecisionOption } from "../src/types.js";
-
-class FakeAnnouncer {
-  announced = 0;
-  failures: string[] = [];
-  async announce(): Promise<void> {
-    this.announced += 1;
-  }
-  async failure(msg: string): Promise<void> {
-    this.failures.push(msg);
-  }
-}
 
 const ctx: CanUseToolContext = { signal: new AbortController().signal, toolUseID: "t" };
 
-function handlerWith(prompt: PromptFn) {
-  const fake = new FakeAnnouncer();
-  const canUseTool = createCanUseTool({ announcer: fake as unknown as Announcer, prompt });
-  return { canUseTool, fake };
-}
-
-const pick = (value: string): PromptFn => async () =>
-  ({ label: value, value }) as DecisionOption;
+const picks = (value: string, label = value): PresentFn => async () =>
+  ({ label, value }) as DecisionOption;
 
 let passed = 0;
 function test(name: string, fn: () => Promise<void>): Promise<void> {
@@ -47,34 +30,21 @@ function test(name: string, fn: () => Promise<void>): Promise<void> {
 
 async function run(): Promise<void> {
   await test("allow -> { behavior: 'allow' }", async () => {
-    const { canUseTool } = handlerWith(pick("allow"));
-    const res = await canUseTool("Bash", { command: "ls" }, ctx);
-    assert.deepEqual(res, { behavior: "allow" });
+    const canUseTool = createCanUseTool({ present: picks("allow") });
+    assert.deepEqual(await canUseTool("Bash", { command: "ls" }, ctx), { behavior: "allow" });
   });
 
   await test("deny -> { behavior: 'deny', message }", async () => {
-    const { canUseTool } = handlerWith(pick("deny"));
+    const canUseTool = createCanUseTool({ present: picks("deny") });
     const res = await canUseTool("Bash", { command: "ls" }, ctx);
     assert.equal(res.behavior, "deny");
   });
 
   await test("question -> allow with the chosen answer", async () => {
-    const { canUseTool } = handlerWith(pick("Red"));
+    const canUseTool = createCanUseTool({ present: picks("Red", "Red") });
     const res = await canUseTool(
       "AskUserQuestion",
-      {
-        questions: [
-          {
-            question: "Which color?",
-            header: "Color",
-            multiSelect: false,
-            options: [
-              { label: "Red", description: "" },
-              { label: "Blue", description: "" },
-            ],
-          },
-        ],
-      },
+      { questions: [{ question: "Which color?", header: "Color", multiSelect: false, options: [] }] },
       ctx,
     );
     assert.equal(res.behavior, "allow");
@@ -84,11 +54,12 @@ async function run(): Promise<void> {
     );
   });
 
-  await test("prompt failure (Ctrl+C) fails safe to deny", async () => {
-    const throwing: PromptFn = async () => {
-      throw new Error("cancelled");
-    };
-    const { canUseTool } = handlerWith(throwing);
+  await test("present failure (Ctrl+C / all channels) fails safe to deny", async () => {
+    const canUseTool = createCanUseTool({
+      present: async () => {
+        throw new Error("cancelled");
+      },
+    });
     const res = await canUseTool("Bash", { command: "rm -rf /" }, ctx);
     assert.equal(res.behavior, "deny");
   });

@@ -36,9 +36,26 @@ not just hear it.
 - **Multiple-choice questions** (`AskUserQuestion`) — announce → navigate →
   select → the choice is returned to Claude as the answer.
 
+**v0.4 adds phone control.** Run with `--phone` and a token-secured page is
+served on your LAN; scan the QR, and decisions can be answered from your phone
+(big accessible buttons) *or* the laptop — whichever responds first wins. The
+work still runs on the laptop.
+
 Both mechanisms were validated by spikes first (see [docs/FINDINGS.md](docs/FINDINGS.md)).
-**Next:** config (voice/rate/verbosity), multi-select questions, and recruiting
-the GitHub-issue author as a test user.
+**Next:** config (voice/rate/verbosity), multi-select questions, tunnel support
+for off-network phones, and recruiting the GitHub-issue author as a test user.
+
+### Run it
+
+```bash
+npm install
+npm start -- "create a file hello.txt that says hi"     # terminal only
+npm start -- --phone "ask me to pick cat or dog"        # + phone (scan the QR)
+npm test                                                 # 25 tests, no tokens
+```
+
+> ⚠️ `--phone` lets any device with the printed link approve Claude's actions.
+> Use it only on a trusted network.
 
 ### Run it
 
