@@ -17,6 +17,8 @@ points** fully drivable without sight:
 - 🔁 **Press `R` to repeat** anything you missed
 - 📱 **Answerable from your phone** over your Wi-Fi (accessible web page), or the
   laptop — whichever responds first wins; the work stays on the laptop
+- 🎛️ **Profiles** pick your control surface: speech + keyboard, speech + phone,
+  or **phone-only** (send prompts *and* approve actions from the phone)
 
 ## Why "agent" not "claude"
 
@@ -62,6 +64,27 @@ agent-ally "your prompt"       # one turn
 agent-ally                     # interactive session (type prompts, shared context)
 agent-ally --phone             # + phone control
 ```
+
+## Profiles — different users, different needs
+
+Not everyone needs the same surfaces. Pick a profile:
+
+| Profile | Who it's for | Speech | Keyboard | Phone |
+|---------|--------------|:------:|:--------:|:-----:|
+| `voice` *(default)* | Blind/low-vision dev at the laptop | ✅ | ✅ | — |
+| `full` | Voice at the laptop, phone helps answer | ✅ | ✅ | answers |
+| `phone` | Laptop unattended — the phone is everything | — | — | **prompts + answers** |
+
+```bash
+agent-ally                          # voice profile (default)
+agent-ally --profile full           # voice + keyboard, phone answers decisions
+agent-ally --profile phone          # drive it entirely from your phone
+agent-ally --profile phone --voice  # phone-driven, but also speak aloud
+```
+
+In the **phone** profile the phone page shows a text box: type what you want the
+agent to do, hit **Send**, then approve or answer right there — no keyboard, no
+screen at the laptop.
 
 Requires Claude Code auth on this machine (the adapter reuses it).
 

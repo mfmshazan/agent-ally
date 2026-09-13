@@ -21,6 +21,8 @@ import type { DecisionChannel } from "./types.js";
 export interface PhoneChannelOptions {
   port?: number;
   token?: string;
+  /** Tell the phone it may submit prompts (shows the composer). */
+  acceptsPrompts?: boolean;
 }
 
 interface Pending {
@@ -57,18 +59,38 @@ export class PhoneChannel implements DecisionChannel {
   readonly name = "phone";
   readonly token: string;
   readonly port: number;
+  readonly acceptsPrompts: boolean;
 
   private server?: http.Server;
   private wss?: WebSocketServer;
   private readonly clients = new Set<WebSocket>();
   private pending: Pending | null = null;
   private readonly html: string;
+  private promptHandler?: (text: string) => void;
+  private lastStatus = { text: "Waiting…", busy: false };
 
   constructor(opts: PhoneChannelOptions = {}) {
     this.token = opts.token ?? randomBytes(8).toString("hex");
     this.port = opts.port ?? 4177;
+    this.acceptsPrompts = opts.acceptsPrompts ?? false;
     const here = dirname(fileURLToPath(import.meta.url));
     this.html = readFileSync(join(here, "client.html"), "utf8");
+  }
+
+  /** Register a callback for prompts typed on the phone. */
+  onPrompt(handler: (text: string) => void): void {
+    this.promptHandler = handler;
+  }
+
+  /** Push a line of the agent's reply (or a note) to the phone transcript. */
+  log(role: "agent" | "you" | "system", text: string): void {
+    this.broadcast({ type: "log", role, text });
+  }
+
+  /** Update the phone's status line and busy state (hides/shows composer). */
+  status(text: string, busy: boolean): void {
+    this.lastStatus = { text, busy };
+    this.broadcast({ type: "status", text, busy });
   }
 
   /** URL to open on the phone (same Wi-Fi). */
@@ -99,6 +121,9 @@ export class PhoneChannel implements DecisionChannel {
 
     wss.on("connection", (ws) => {
       this.clients.add(ws);
+      // Tell the phone what it's allowed to do, and the current status.
+      ws.send(JSON.stringify({ type: "hello", acceptsPrompts: this.acceptsPrompts }));
+      ws.send(JSON.stringify({ type: "status", ...this.lastStatus }));
       // Late-joining phone sees the in-flight decision immediately.
       if (this.pending) ws.send(JSON.stringify({ type: "decision", decision: serialize(this.pending.decision) }));
       ws.on("message", (raw) => this.onMessage(String(raw)));
@@ -119,10 +144,18 @@ export class PhoneChannel implements DecisionChannel {
   }
 
   private onMessage(raw: string): void {
-    let msg: { type?: string; toolUseId?: string; value?: string };
+    let msg: { type?: string; toolUseId?: string; value?: string; text?: string };
     try {
       msg = JSON.parse(raw);
     } catch {
+      return;
+    }
+    if (msg.type === "prompt") {
+      const text = (msg.text ?? "").trim();
+      if (text && this.acceptsPrompts && this.promptHandler) {
+        this.log("you", text);
+        this.promptHandler(text);
+      }
       return;
     }
     if (msg.type !== "answer" || !this.pending) return;
