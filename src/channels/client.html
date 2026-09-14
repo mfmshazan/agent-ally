@@ -80,6 +80,7 @@
         ws.onmessage = (e) => {
           const msg = JSON.parse(e.data);
           if (msg.type === "hello") { acceptsPrompts = !!msg.acceptsPrompts; refreshComposer(); }
+          else if (msg.type === "history") { transcriptEl.innerHTML = ""; (msg.entries || []).forEach((e) => addMessage(e.role, e.text)); }
           else if (msg.type === "decision") render(msg.decision);
           else if (msg.type === "clear") clearDecision();
           else if (msg.type === "log") addMessage(msg.role, msg.text);

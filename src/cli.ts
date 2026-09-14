@@ -32,6 +32,7 @@ import { createPresenter } from "./coordinator.js";
 import { ClaudeAdapter } from "./adapters/claude.js";
 import type { AgentAdapter, RunContext } from "./adapters/types.js";
 import { isProfileName, resolveSurfaces, type ProfileName } from "./config/profile.js";
+import { HistoryStore, defaultHistoryFile } from "./history/store.js";
 
 interface Args {
   profile?: ProfileName;
@@ -245,7 +246,12 @@ async function main(): Promise<void> {
 
   let phoneChannel: PhoneChannel | undefined;
   if (surfaces.phone) {
-    phoneChannel = new PhoneChannel({ port: args.port, acceptsPrompts: surfaces.phonePrompts });
+    const store = new HistoryStore(defaultHistoryFile(process.cwd()));
+    phoneChannel = new PhoneChannel({
+      port: args.port,
+      acceptsPrompts: surfaces.phonePrompts,
+      store,
+    });
     await phoneChannel.start();
     console.log(`\n📱 Phone control ready — open this on your phone (same Wi-Fi):\n   ${phoneChannel.url}\n`);
     try {
@@ -268,7 +274,13 @@ async function main(): Promise<void> {
     phoneChannel?.log("agent", t);
     if (!surfaces.terminal) console.log(`\n${t}\n`);
   };
-  const baseCtx: RunContext = { present, onText };
+  // Notes (e.g. auto-approved edits) go to the log/transcript but aren't spoken,
+  // so opting into "allow all edits" actually stays quiet and fast.
+  const onNote: RunContext["onNote"] = (t) => {
+    phoneChannel?.log("system", t);
+    console.log(t);
+  };
+  const baseCtx: RunContext = { present, onText, onNote };
 
   // If the phone may drive the agent, funnel its prompts into a queue.
   let phoneQueue: PromptQueue | undefined;

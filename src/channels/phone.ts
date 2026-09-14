@@ -17,12 +17,15 @@ import { networkInterfaces } from "node:os";
 import { WebSocketServer, type WebSocket } from "ws";
 import type { Decision, DecisionOption } from "../types.js";
 import type { DecisionChannel } from "./types.js";
+import type { HistoryEntry, HistoryStore } from "../history/store.js";
 
 export interface PhoneChannelOptions {
   port?: number;
   token?: string;
   /** Tell the phone it may submit prompts (shows the composer). */
   acceptsPrompts?: boolean;
+  /** Persist the transcript across sessions (per project). */
+  store?: HistoryStore;
 }
 
 interface Pending {
@@ -44,6 +47,15 @@ function serialize(decision: Decision) {
       value: o.value,
     })),
   };
+}
+
+/** A one-line record of a resolved decision for the transcript. */
+function answerSummary(decision: Decision, option: DecisionOption): string {
+  if (decision.kind === "permission") {
+    const verb = option.value === "allow" ? "✅ Allowed" : "⛔ Denied";
+    return `${verb}: ${decision.title}`;
+  }
+  return `✅ Chose "${option.label}" — ${decision.title}`;
 }
 
 function firstLanAddress(): string {
@@ -68,11 +80,18 @@ export class PhoneChannel implements DecisionChannel {
   private readonly html: string;
   private promptHandler?: (text: string) => void;
   private lastStatus = { text: "Waiting…", busy: false };
+  /** Server-side transcript so a reloaded / newly-joined phone sees the thread. */
+  private readonly history: HistoryEntry[];
+  private readonly maxHistory = 300;
+  private readonly store?: HistoryStore;
 
   constructor(opts: PhoneChannelOptions = {}) {
     this.token = opts.token ?? randomBytes(8).toString("hex");
     this.port = opts.port ?? 4177;
     this.acceptsPrompts = opts.acceptsPrompts ?? false;
+    this.store = opts.store;
+    // Seed the in-memory thread from disk so past sessions show up.
+    this.history = this.store?.load() ?? [];
     const here = dirname(fileURLToPath(import.meta.url));
     this.html = readFileSync(join(here, "client.html"), "utf8");
   }
@@ -84,7 +103,18 @@ export class PhoneChannel implements DecisionChannel {
 
   /** Push a line of the agent's reply (or a note) to the phone transcript. */
   log(role: "agent" | "you" | "system", text: string): void {
+    this.remember(role, text);
     this.broadcast({ type: "log", role, text });
+  }
+
+  /** Append to the persistent transcript, trimming to the cap. */
+  private remember(role: HistoryEntry["role"], text: string): void {
+    const entry: HistoryEntry = { role, text };
+    this.history.push(entry);
+    if (this.history.length > this.maxHistory) {
+      this.history.splice(0, this.history.length - this.maxHistory);
+    }
+    this.store?.append(entry);
   }
 
   /** Update the phone's status line and busy state (hides/shows composer). */
@@ -121,8 +151,9 @@ export class PhoneChannel implements DecisionChannel {
 
     wss.on("connection", (ws) => {
       this.clients.add(ws);
-      // Tell the phone what it's allowed to do, and the current status.
+      // Tell the phone what it's allowed to do, replay the thread, then status.
       ws.send(JSON.stringify({ type: "hello", acceptsPrompts: this.acceptsPrompts }));
+      ws.send(JSON.stringify({ type: "history", entries: this.history }));
       ws.send(JSON.stringify({ type: "status", ...this.lastStatus }));
       // Late-joining phone sees the in-flight decision immediately.
       if (this.pending) ws.send(JSON.stringify({ type: "decision", decision: serialize(this.pending.decision) }));
@@ -162,9 +193,11 @@ export class PhoneChannel implements DecisionChannel {
     if (msg.toolUseId !== this.pending.decision.toolUseId) return;
     const option = this.pending.decision.options.find((o) => o.value === msg.value);
     if (!option) return;
-    const { resolve } = this.pending;
+    const { decision, resolve } = this.pending;
     this.pending = null;
     this.broadcast({ type: "clear" });
+    // Record what was asked and how it was answered, so it stays in the thread.
+    this.log("system", answerSummary(decision, option));
     resolve(option);
   }
 
