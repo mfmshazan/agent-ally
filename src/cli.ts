@@ -13,14 +13,18 @@
  *   agent-ally                             # interactive session (voice profile)
  *   agent-ally --profile full             # + phone answers decisions
  *   agent-ally --profile phone            # drive everything from your phone
- *   agent-ally --phone                     # legacy: add phone to current profile
+ *   agent-ally --phone                     # add a full phone (typing + answers)
  *   agent-ally --profile phone --voice    # phone-driven, but also speak aloud
  *   agent-ally --silent                    # no audio; prints [SPEAK] lines
- *   agent-ally --fresh                     # start a new session (ignore saved one)
+ *   agent-ally --new                       # start a brand-new chat for this project
+ *   agent-ally --list                      # list this project's chats, then exit
+ *   agent-ally --resume 2                  # reopen chat #2 from --list (or by id)
+ *   agent-ally --history                   # print the current chat's transcript, then exit
  *   agent-ally --port 5000                 # custom phone port
  *
- * By default each project's Claude session is remembered, so relaunching later
- * continues the same conversation (yesterday's plan). Pass --fresh to start over.
+ * Each project keeps multiple chats (like an IDE's conversation list). Relaunching
+ * reopens the current chat and continues its thread; --new starts another, and
+ * --list / --resume switch between them.
  *
  * Requires Claude Code auth already set up on this machine (the adapter reuses it).
  */
@@ -38,13 +42,18 @@ import type { AgentAdapter, RunContext } from "./adapters/types.js";
 import { isProfileName, resolveSurfaces, type ProfileName } from "./config/profile.js";
 import { HistoryStore, defaultHistoryFile } from "./history/store.js";
 import { SessionStore, defaultSessionFile } from "./history/session.js";
+import { formatTranscript } from "./history/format.js";
+import { ChatStore, NEW_CHAT_TITLE } from "./history/chats.js";
 
 interface Args {
   profile?: ProfileName;
   silent: boolean;
   phone: boolean;
   voice: boolean;
-  fresh: boolean;
+  newChat: boolean;
+  list: boolean;
+  resume?: string;
+  history: boolean;
   port?: number;
   prompt: string;
 }
@@ -54,7 +63,10 @@ function parseArgs(argv: string[]): Args {
   let silent = false;
   let phone = false;
   let voice = false;
-  let fresh = false;
+  let newChat = false;
+  let list = false;
+  let resume: string | undefined;
+  let history = false;
   let port: number | undefined;
   const rest: string[] = [];
   for (let i = 0; i < argv.length; i += 1) {
@@ -62,7 +74,10 @@ function parseArgs(argv: string[]): Args {
     if (a === "--silent") silent = true;
     else if (a === "--phone") phone = true;
     else if (a === "--voice") voice = true;
-    else if (a === "--fresh") fresh = true;
+    else if (a === "--new" || a === "--fresh") newChat = true;
+    else if (a === "--list" || a === "--chats") list = true;
+    else if (a === "--resume") resume = argv[(i += 1)];
+    else if (a === "--history") history = true;
     else if (a === "--port") port = Number(argv[(i += 1)]);
     else if (a === "--profile") {
       const name = argv[(i += 1)];
@@ -73,7 +88,7 @@ function parseArgs(argv: string[]): Args {
       profile = name;
     } else rest.push(a);
   }
-  return { profile, silent, phone, voice, fresh, port, prompt: rest.join(" ").trim() };
+  return { profile, silent, phone, voice, newChat, list, resume, history, port, prompt: rest.join(" ").trim() };
 }
 
 interface LineReader {
@@ -151,7 +166,20 @@ interface InteractiveOptions {
   initialResume?: string;
   /** Persist the session id after each turn so it survives a restart. */
   onResume?: (sessionId: string) => void;
+  /** The transcript store, so `history` at the prompt can print it locally. */
+  historyStore?: HistoryStore;
+  /** The chat registry + current chat id, for auto-titling and recency. */
+  chatStore?: ChatStore;
+  chatId?: string;
 }
+
+/**
+ * Typed at the `you>` prompt, these print the saved transcript locally instead
+ * of being sent to the agent — so a natural instinct like typing "history" (or
+ * even "agent-ally --history") just works, rather than becoming a chat message.
+ */
+const HISTORY_COMMANDS = new Set(["history", "/history", "--history", "agent-ally --history"]);
+const CHATS_COMMANDS = new Set(["chats", "/chats", "--list", "agent-ally --list"]);
 
 /**
  * One interactive loop that serves every profile. Each turn it takes the next
@@ -160,7 +188,7 @@ interface InteractiveOptions {
  * the turn own stdin uncontested) before accepting the next.
  */
 async function runInteractive(opts: InteractiveOptions): Promise<void> {
-  const { adapter, baseCtx, askTerminal, phoneQueue, phoneChannel, onResume } = opts;
+  const { adapter, baseCtx, askTerminal, phoneQueue, phoneChannel, onResume, historyStore, chatStore, chatId } = opts;
   let resume: string | undefined = opts.initialResume;
 
   // A single outstanding phone read, kept across iterations so a prompt that
@@ -223,12 +251,30 @@ async function runInteractive(opts: InteractiveOptions): Promise<void> {
       const trimmed = text.trim();
       if (!trimmed) continue;
       if (trimmed === "exit" || trimmed === "quit") break;
+      // Local commands — handled here, never sent to the agent.
+      if (HISTORY_COMMANDS.has(trimmed.toLowerCase())) {
+        console.log("\n" + formatTranscript(historyStore?.load() ?? []) + "\n");
+        if (phoneChannel) phoneChannel.log("system", "📜 Transcript is above — scroll up to review.");
+        continue;
+      }
+      if (CHATS_COMMANDS.has(trimmed.toLowerCase())) {
+        console.log("");
+        if (chatStore) printChats(chatStore);
+        console.log("\n(Switch chats by relaunching:  agent-ally --resume <number>)\n");
+        continue;
+      }
+
+      // Name a brand-new chat after its first real prompt.
+      if (chatStore && chatId && chatStore.get(chatId)?.title === NEW_CHAT_TITLE) {
+        chatStore.update(chatId, { title: trimmed.slice(0, 50) });
+      }
 
       phoneChannel?.status("Working…", true);
       try {
         const next = (await adapter.run(trimmed, { ...baseCtx, resume })) || resume;
         if (next && next !== resume) onResume?.(next);
         resume = next;
+        if (chatStore && chatId) chatStore.touch(chatId);
       } catch (err) {
         const message = (err as Error).message;
         console.error(`\n${adapter.name} failed:`, message);
@@ -242,8 +288,82 @@ async function runInteractive(opts: InteractiveOptions): Promise<void> {
   console.log("\nBye.");
 }
 
+/**
+ * One-time migration: fold a pre-chat project (single shared transcript + a
+ * single saved session) into the new multi-chat store as one "Previous chat",
+ * so upgrading users don't lose their thread.
+ */
+function migrateLegacyChat(store: ChatStore, cwd: string): void {
+  if (store.list().length > 0) return;
+  const entries = new HistoryStore(defaultHistoryFile(cwd)).load();
+  if (entries.length === 0) return;
+  const chat = store.create("Previous chat");
+  const dst = new HistoryStore(store.transcriptFile(chat.id));
+  for (const e of entries) dst.append(e);
+  const sessionId = new SessionStore(defaultSessionFile(cwd)).load();
+  if (sessionId) store.update(chat.id, { sessionId });
+}
+
+/** Print the project's chats (for `--list`). */
+function printChats(store: ChatStore): void {
+  const chats = store.list();
+  if (chats.length === 0) {
+    console.log("No chats yet. Start one with:  agent-ally");
+    return;
+  }
+  const currentId = store.current()?.id;
+  console.log("Chats for this project (newest first):\n");
+  chats.forEach((c, i) => {
+    const count = new HistoryStore(store.transcriptFile(c.id)).load().length;
+    const when = new Date(c.updatedAt).toLocaleString();
+    const mark = c.id === currentId ? "   ← current" : "";
+    console.log(`  ${i + 1}. ${c.title}${mark}`);
+    console.log(`      ${count} messages · ${when}`);
+  });
+  console.log("\nReopen one:   agent-ally --resume <number>");
+  console.log("New chat:     agent-ally --new");
+}
+
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
+  const cwd = process.cwd();
+
+  // Chats live per project; migrate any pre-chat data on first run.
+  const chatStore = new ChatStore(cwd);
+  migrateLegacyChat(chatStore, cwd);
+
+  // `--list` shows the chats and exits.
+  if (args.list) {
+    printChats(chatStore);
+    return;
+  }
+
+  // Choose which chat to open: an explicit --resume, a brand-new chat (--new),
+  // or the current one (creating the first chat if none exists).
+  let chat;
+  if (args.resume) {
+    const found = chatStore.resolve(args.resume);
+    if (!found) {
+      console.error(`No chat "${args.resume}". Run  agent-ally --list  to see them.`);
+      process.exit(1);
+    }
+    chat = chatStore.switchTo(found.id) ?? found;
+  } else if (args.newChat) {
+    chat = chatStore.create();
+  } else {
+    chat = chatStore.currentOrCreate();
+  }
+
+  // Each chat has its own transcript; the phone persists to it and `history`
+  // reads it back.
+  const historyStore = new HistoryStore(chatStore.transcriptFile(chat.id));
+
+  // `--history` prints this chat's transcript and exits — no session, no audio.
+  if (args.history) {
+    console.log(formatTranscript(historyStore.load()));
+    return;
+  }
+
   const surfaces = resolveSurfaces(args.profile, {
     phone: args.phone,
     silent: args.silent,
@@ -260,11 +380,10 @@ async function main(): Promise<void> {
 
   let phoneChannel: PhoneChannel | undefined;
   if (surfaces.phone) {
-    const store = new HistoryStore(defaultHistoryFile(process.cwd()));
     phoneChannel = new PhoneChannel({
       port: args.port,
       acceptsPrompts: surfaces.phonePrompts,
-      store,
+      store: historyStore,
     });
     await phoneChannel.start();
     console.log(`\n📱 Phone control ready — open this on your phone (same Wi-Fi):\n   ${phoneChannel.url}\n`);
@@ -296,16 +415,18 @@ async function main(): Promise<void> {
   };
   const baseCtx: RunContext = { present, onText, onNote };
 
-  // Remember this project's Claude session so a relaunch continues the same
-  // conversation (unless --fresh). The SDK replays the transcript for the id.
-  const sessionStore = new SessionStore(defaultSessionFile(process.cwd()));
-  const initialResume = args.fresh ? undefined : sessionStore.load();
-  const onResume = (id: string): void => sessionStore.save(id);
+  // Resume this chat's Claude session so relaunching continues its thread; save
+  // the id back onto the chat as the SDK reports it.
+  const initialResume = chat.sessionId;
+  const onResume = (id: string): void => chatStore.update(chat.id, { sessionId: id });
+  console.log(`\n💬 Chat: ${chat.title}`);
   if (initialResume) {
-    const note = "Continuing your previous session for this project.";
-    console.log(`↩️  ${note} (use --fresh to start over)`);
+    const note = "Continuing this chat where you left off.";
+    console.log(`↩️  ${note}  (--new for a fresh chat · --list to switch)`);
     phoneChannel?.log("system", note);
     if (surfaces.voice) await announcer.say(note);
+  } else {
+    console.log("   New chat.  (--list to see all chats for this project)");
   }
 
   // If the phone may drive the agent, funnel its prompts into a queue.
@@ -318,11 +439,15 @@ async function main(): Promise<void> {
   try {
     if (args.prompt) {
       // One-shot turn — still persist the session so a later run can resume it.
+      if (chatStore.get(chat.id)?.title === NEW_CHAT_TITLE) {
+        chatStore.update(chat.id, { title: args.prompt.slice(0, 50) });
+      }
       const next = await adapter.run(args.prompt, { ...baseCtx, resume: initialResume });
       if (typeof next === "string" && next) onResume(next);
+      chatStore.touch(chat.id);
     } else {
       if (surfaces.terminal) {
-        console.log('Interactive session. Type a prompt, or "exit" to quit.');
+        console.log('Interactive session. Type a prompt, "history" to review, "chats" to list, or "exit" to quit.');
         if (phoneQueue) console.log("(You can also send prompts from your phone.)");
         console.log("");
       } else {
@@ -336,6 +461,9 @@ async function main(): Promise<void> {
         phoneChannel,
         initialResume,
         onResume,
+        historyStore,
+        chatStore,
+        chatId: chat.id,
       });
     }
   } catch (err) {

@@ -96,18 +96,37 @@ Requires Claude Code auth on this machine (the adapter reuses it).
 
 ## Picks up where you left off
 
-Each project's Claude session is remembered between runs, so relaunching
-`agent-ally` another day **continues the same conversation** — yesterday's plan
-is still in context, not just in the phone transcript. Start clean whenever you
-want with `--fresh`:
+Each project keeps **multiple chats** — like the conversation list in an IDE
+agent. Relaunching `agent-ally` reopens the current chat and **continues the same
+conversation** — yesterday's plan is still in context, not just in the phone
+transcript. Start another thread, list them, or switch between them:
 
 ```bash
-agent-ally               # continues this project's last session
-agent-ally --fresh       # start a brand-new session for this project
+agent-ally               # reopen and continue this project's current chat
+agent-ally --new         # start a brand-new chat for this project
+agent-ally --list        # list this project's chats (numbered), then exit
+agent-ally --resume 2    # reopen chat #2 from the list (or by its id)
 ```
 
-The session id is stored per-project under `~/.agent-ally/sessions/`, alongside
-the phone transcript history in `~/.agent-ally/history/`.
+A new chat is auto-named after its first prompt. Inside a session you can type
+`chats` to see the list or `history` to review the current chat's transcript.
+
+Each chat has its own Claude session and its own transcript, stored per-project
+under `~/.agent-ally/projects/`.
+
+### Reading back the history
+
+You move between phone and laptop, so the transcript is reachable from both:
+
+- **On the phone** — the full conversation replays on connect, grouped by day
+  (Today / Yesterday / date) with a time on each message. Scroll back to review
+  what was planned before sending the next prompt.
+- **On the laptop** — print the same transcript to the terminal (clean text your
+  screen reader can read straight through), then exit:
+
+  ```bash
+  agent-ally --history
+  ```
 
 ## Keys
 
