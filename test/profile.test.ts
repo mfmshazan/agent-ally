@@ -36,11 +36,12 @@ import { resolveSurfaces } from "../src/config/profile.js";
   assert.equal(s.terminal, true);
 }
 
-// Legacy --phone adds the phone channel on top of the voice profile.
+// --phone adds a fully usable phone (prompts + answers) on top of voice.
 {
   const s = resolveSurfaces("voice", { phone: true });
   assert.equal(s.phone, true);
   assert.equal(s.terminal, true);
+  assert.equal(s.phonePrompts, true); // the phone gets an input field
 }
 
 // Default profile is voice when none supplied.

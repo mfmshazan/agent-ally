@@ -26,7 +26,7 @@ export interface Surfaces {
 }
 
 export interface CliOverrides {
-  /** Legacy `--phone`: add the phone channel on top of any profile. */
+  /** `--phone`: add a fully usable phone (prompts + answers) to any profile. */
   phone?: boolean;
   /** `--silent`: force voice off. */
   silent?: boolean;
@@ -57,7 +57,12 @@ export function resolveSurfaces(
   overrides: CliOverrides = {},
 ): Surfaces {
   const s: Surfaces = { ...BASE[profile] };
-  if (overrides.phone) s.phone = true;
+  // --phone adds a *fully usable* phone: it can both send prompts (input field)
+  // and answer decisions. (Answer-only was a confusing half-mode.)
+  if (overrides.phone) {
+    s.phone = true;
+    s.phonePrompts = true;
+  }
   if (overrides.silent) s.voice = false;
   if (overrides.voice) s.voice = true;
   // Never end up with no way to drive the agent.
