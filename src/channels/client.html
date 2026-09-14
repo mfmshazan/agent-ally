@@ -30,12 +30,31 @@
       button .desc { display: block; font-weight: 400; font-size: 0.9rem; opacity: 0.85; margin-top: 0.2rem; }
       button.confirm { background: #ff4d4f; }
       #transcript { margin: 1rem 0; display: flex; flex-direction: column; gap: 0.5rem; }
-      .msg { padding: 0.6rem 0.8rem; border-radius: 10px; font-size: 0.98rem; line-height: 1.4; white-space: pre-wrap; word-break: break-word; }
+      .msg { padding: 0.6rem 0.8rem; border-radius: 10px; font-size: 0.98rem; line-height: 1.4; word-break: break-word; }
       .msg.agent { background: #1c2030; }
       .msg.you { background: #23324d; align-self: flex-end; }
       .msg.system { background: transparent; opacity: 0.6; font-size: 0.85rem; text-align: center; }
+      .msg .time { display: block; font-size: 0.7rem; opacity: 0.5; margin-bottom: 0.15rem; }
+      /* Lightweight rendering of the Markdown Claude writes, so ** and ` don't
+         show as raw characters (and aren't read aloud by mobile screen readers). */
+      .msg strong { font-weight: 700; }
+      .msg code { background: #000; color: #7fd; padding: 0.05rem 0.32rem; border-radius: 4px; font-family: ui-monospace, monospace; font-size: 0.85em; }
+      .msg ul { margin: 0.3rem 0; padding-left: 1.2rem; }
+      .msg li { margin: 0.15rem 0; }
+      .msg .h { font-weight: 700; margin: 0.2rem 0; }
+      .msg .body > div:empty { height: 0.5rem; }
+      .day { align-self: center; font-size: 0.72rem; opacity: 0.55; text-transform: uppercase; letter-spacing: 0.05em; margin: 0.85rem 0 0.15rem; }
       #composer { display: none; gap: 0.5rem; margin-top: 1rem; }
-      #composer.on { display: flex; flex-direction: column; }
+      /* Pin the input to the bottom of the viewport so a long resumed history
+         never pushes it off-screen — it stays reachable while the thread scrolls
+         behind it. */
+      #composer.on {
+        display: flex; flex-direction: column;
+        position: sticky; bottom: 0;
+        background: #12131a;
+        padding: 0.6rem 0 0.5rem;
+        border-top: 1px solid #23242e;
+      }
       #prompt { width: 100%; min-height: 3.5rem; padding: 0.8rem; font-size: 1.05rem; border-radius: 12px; border: 1px solid #333; background: #0d0e14; color: #f2f3f7; resize: vertical; }
       #send { background: #2f6f3e; }
       #send:disabled { opacity: 0.5; }
@@ -80,18 +99,90 @@
         ws.onmessage = (e) => {
           const msg = JSON.parse(e.data);
           if (msg.type === "hello") { acceptsPrompts = !!msg.acceptsPrompts; refreshComposer(); }
-          else if (msg.type === "history") { transcriptEl.innerHTML = ""; (msg.entries || []).forEach((e) => addMessage(e.role, e.text)); }
+          else if (msg.type === "history") { transcriptEl.innerHTML = ""; lastDay = null; (msg.entries || []).forEach((e) => addMessage(e.role, e.text, e.at)); refreshComposer(); }
           else if (msg.type === "decision") render(msg.decision);
           else if (msg.type === "clear") clearDecision();
-          else if (msg.type === "log") addMessage(msg.role, msg.text);
+          else if (msg.type === "log") addMessage(msg.role, msg.text, msg.at);
           else if (msg.type === "status") { statusEl.textContent = msg.text; busy = !!msg.busy; refreshComposer(); }
         };
       }
 
-      function addMessage(role, text) {
+      let lastDay = null; // day key of the last rendered message, for separators
+
+      function parseAt(at) {
+        if (!at) return null;
+        const d = new Date(at);
+        return isNaN(d.getTime()) ? null : d;
+      }
+      function dayLabel(d) {
+        if (!d) return "Earlier";
+        const startOf = (x) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+        const diff = Math.round((startOf(new Date()) - startOf(d)) / 86400000);
+        if (diff === 0) return "Today";
+        if (diff === 1) return "Yesterday";
+        return d.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" });
+      }
+      function maybeDaySeparator(d) {
+        const key = d ? d.toDateString() : "earlier";
+        if (key === lastDay) return;
+        lastDay = key;
+        const sep = document.createElement("div");
+        sep.className = "day";
+        sep.textContent = dayLabel(d);
+        transcriptEl.appendChild(sep);
+      }
+
+      // Escape first (these messages come from the agent), then apply a tiny,
+      // safe subset of Markdown. No raw HTML from the agent is ever injected.
+      function escapeHtml(s) {
+        return s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+      }
+      function inlineMd(s) {
+        return s
+          .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+          .replace(/`([^`]+)`/g, "<code>$1</code>");
+      }
+      function renderMarkdown(text) {
+        const lines = escapeHtml(text).split("\n");
+        let html = "";
+        let inList = false;
+        const closeList = () => { if (inList) { html += "</ul>"; inList = false; } };
+        for (const line of lines) {
+          const bullet = line.match(/^\s*[-*]\s+(.*)$/);
+          const heading = line.match(/^\s*#{1,6}\s+(.*)$/);
+          if (bullet) {
+            if (!inList) { html += "<ul>"; inList = true; }
+            html += "<li>" + inlineMd(bullet[1]) + "</li>";
+          } else if (heading) {
+            closeList();
+            html += '<div class="h">' + inlineMd(heading[1]) + "</div>";
+          } else if (line.trim() === "") {
+            closeList();
+            html += "<div></div>"; // blank line -> small gap
+          } else {
+            closeList();
+            html += "<div>" + inlineMd(line) + "</div>";
+          }
+        }
+        closeList();
+        return html;
+      }
+
+      function addMessage(role, text, at) {
+        const d = parseAt(at);
+        maybeDaySeparator(d);
         const el = document.createElement("div");
         el.className = "msg " + role;
-        el.textContent = text;
+        if (d && role !== "system") {
+          const time = document.createElement("span");
+          time.className = "time";
+          time.textContent = d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+          el.appendChild(time);
+        }
+        const body = document.createElement("div");
+        body.className = "body";
+        body.innerHTML = renderMarkdown(text);
+        el.appendChild(body);
         transcriptEl.appendChild(el);
         el.scrollIntoView({ block: "end" });
       }
@@ -100,8 +191,12 @@
         // Show the composer only when we're allowed to prompt, nothing is being
         // asked, and the agent isn't mid-task.
         const on = acceptsPrompts && !current && !busy;
+        const wasOn = composerEl.classList.contains("on");
         composerEl.classList.toggle("on", on);
         sendEl.disabled = !on;
+        // When it first appears (e.g. right after a long history loads), make
+        // sure it's in view rather than below the fold.
+        if (on && !wasOn) composerEl.scrollIntoView({ block: "end" });
       }
 
       function clearDecision() {

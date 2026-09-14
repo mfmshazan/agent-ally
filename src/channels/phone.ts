@@ -103,18 +103,19 @@ export class PhoneChannel implements DecisionChannel {
 
   /** Push a line of the agent's reply (or a note) to the phone transcript. */
   log(role: "agent" | "you" | "system", text: string): void {
-    this.remember(role, text);
-    this.broadcast({ type: "log", role, text });
+    const entry = this.remember(role, text);
+    this.broadcast({ type: "log", role, text, at: entry.at });
   }
 
   /** Append to the persistent transcript, trimming to the cap. */
-  private remember(role: HistoryEntry["role"], text: string): void {
-    const entry: HistoryEntry = { role, text };
+  private remember(role: HistoryEntry["role"], text: string): HistoryEntry {
+    const entry: HistoryEntry = { role, text, at: new Date().toISOString() };
     this.history.push(entry);
     if (this.history.length > this.maxHistory) {
       this.history.splice(0, this.history.length - this.maxHistory);
     }
     this.store?.append(entry);
+    return entry;
   }
 
   /** Update the phone's status line and busy state (hides/shows composer). */

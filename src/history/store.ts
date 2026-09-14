@@ -15,6 +15,8 @@ import { dirname, join } from "node:path";
 export interface HistoryEntry {
   role: "agent" | "you" | "system";
   text: string;
+  /** ISO timestamp of when this happened; absent on entries from older runs. */
+  at?: string;
 }
 
 /** ~/.agent-ally/history/<slug>-<hash>.jsonl for the given working directory. */
@@ -35,7 +37,8 @@ function isEntry(v: unknown): v is HistoryEntry {
   return (
     !!e &&
     typeof e.text === "string" &&
-    (e.role === "agent" || e.role === "you" || e.role === "system")
+    (e.role === "agent" || e.role === "you" || e.role === "system") &&
+    (e.at === undefined || typeof e.at === "string")
   );
 }
 
@@ -59,7 +62,9 @@ export class HistoryStore {
       if (!s) continue;
       try {
         const parsed = JSON.parse(s);
-        if (isEntry(parsed)) entries.push({ role: parsed.role, text: parsed.text });
+        if (isEntry(parsed)) {
+          entries.push(parsed.at ? { role: parsed.role, text: parsed.text, at: parsed.at } : { role: parsed.role, text: parsed.text });
+        }
       } catch {
         /* skip a corrupt line */
       }
