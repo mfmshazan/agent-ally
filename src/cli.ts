@@ -16,7 +16,11 @@
  *   agent-ally --phone                     # legacy: add phone to current profile
  *   agent-ally --profile phone --voice    # phone-driven, but also speak aloud
  *   agent-ally --silent                    # no audio; prints [SPEAK] lines
+ *   agent-ally --fresh                     # start a new session (ignore saved one)
  *   agent-ally --port 5000                 # custom phone port
+ *
+ * By default each project's Claude session is remembered, so relaunching later
+ * continues the same conversation (yesterday's plan). Pass --fresh to start over.
  *
  * Requires Claude Code auth already set up on this machine (the adapter reuses it).
  */
@@ -33,12 +37,14 @@ import { ClaudeAdapter } from "./adapters/claude.js";
 import type { AgentAdapter, RunContext } from "./adapters/types.js";
 import { isProfileName, resolveSurfaces, type ProfileName } from "./config/profile.js";
 import { HistoryStore, defaultHistoryFile } from "./history/store.js";
+import { SessionStore, defaultSessionFile } from "./history/session.js";
 
 interface Args {
   profile?: ProfileName;
   silent: boolean;
   phone: boolean;
   voice: boolean;
+  fresh: boolean;
   port?: number;
   prompt: string;
 }
@@ -48,6 +54,7 @@ function parseArgs(argv: string[]): Args {
   let silent = false;
   let phone = false;
   let voice = false;
+  let fresh = false;
   let port: number | undefined;
   const rest: string[] = [];
   for (let i = 0; i < argv.length; i += 1) {
@@ -55,6 +62,7 @@ function parseArgs(argv: string[]): Args {
     if (a === "--silent") silent = true;
     else if (a === "--phone") phone = true;
     else if (a === "--voice") voice = true;
+    else if (a === "--fresh") fresh = true;
     else if (a === "--port") port = Number(argv[(i += 1)]);
     else if (a === "--profile") {
       const name = argv[(i += 1)];
@@ -65,7 +73,7 @@ function parseArgs(argv: string[]): Args {
       profile = name;
     } else rest.push(a);
   }
-  return { profile, silent, phone, voice, port, prompt: rest.join(" ").trim() };
+  return { profile, silent, phone, voice, fresh, port, prompt: rest.join(" ").trim() };
 }
 
 interface LineReader {
@@ -139,6 +147,10 @@ interface InteractiveOptions {
   phoneQueue?: PromptQueue;
   /** Present, when connected, so we can reflect busy/idle status on the phone. */
   phoneChannel?: PhoneChannel;
+  /** A prior session id to continue (e.g. yesterday's plan for this project). */
+  initialResume?: string;
+  /** Persist the session id after each turn so it survives a restart. */
+  onResume?: (sessionId: string) => void;
 }
 
 /**
@@ -148,8 +160,8 @@ interface InteractiveOptions {
  * the turn own stdin uncontested) before accepting the next.
  */
 async function runInteractive(opts: InteractiveOptions): Promise<void> {
-  const { adapter, baseCtx, askTerminal, phoneQueue, phoneChannel } = opts;
-  let resume: string | undefined;
+  const { adapter, baseCtx, askTerminal, phoneQueue, phoneChannel, onResume } = opts;
+  let resume: string | undefined = opts.initialResume;
 
   // A single outstanding phone read, kept across iterations so a prompt that
   // arrives mid-turn is not dropped (a fresh next() would replace the waiter).
@@ -214,7 +226,9 @@ async function runInteractive(opts: InteractiveOptions): Promise<void> {
 
       phoneChannel?.status("Working…", true);
       try {
-        resume = (await adapter.run(trimmed, { ...baseCtx, resume })) || resume;
+        const next = (await adapter.run(trimmed, { ...baseCtx, resume })) || resume;
+        if (next && next !== resume) onResume?.(next);
+        resume = next;
       } catch (err) {
         const message = (err as Error).message;
         console.error(`\n${adapter.name} failed:`, message);
@@ -282,6 +296,18 @@ async function main(): Promise<void> {
   };
   const baseCtx: RunContext = { present, onText, onNote };
 
+  // Remember this project's Claude session so a relaunch continues the same
+  // conversation (unless --fresh). The SDK replays the transcript for the id.
+  const sessionStore = new SessionStore(defaultSessionFile(process.cwd()));
+  const initialResume = args.fresh ? undefined : sessionStore.load();
+  const onResume = (id: string): void => sessionStore.save(id);
+  if (initialResume) {
+    const note = "Continuing your previous session for this project.";
+    console.log(`↩️  ${note} (use --fresh to start over)`);
+    phoneChannel?.log("system", note);
+    if (surfaces.voice) await announcer.say(note);
+  }
+
   // If the phone may drive the agent, funnel its prompts into a queue.
   let phoneQueue: PromptQueue | undefined;
   if (phoneChannel && surfaces.phonePrompts) {
@@ -291,8 +317,9 @@ async function main(): Promise<void> {
 
   try {
     if (args.prompt) {
-      // One-shot turn.
-      await adapter.run(args.prompt, baseCtx);
+      // One-shot turn — still persist the session so a later run can resume it.
+      const next = await adapter.run(args.prompt, { ...baseCtx, resume: initialResume });
+      if (typeof next === "string" && next) onResume(next);
     } else {
       if (surfaces.terminal) {
         console.log('Interactive session. Type a prompt, or "exit" to quit.');
@@ -307,6 +334,8 @@ async function main(): Promise<void> {
         askTerminal: surfaces.terminal,
         phoneQueue,
         phoneChannel,
+        initialResume,
+        onResume,
       });
     }
   } catch (err) {

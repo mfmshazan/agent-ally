@@ -94,6 +94,21 @@ Requires Claude Code auth on this machine (the adapter reuses it).
 > ⚠️ `--phone` lets any device with the printed link approve the agent's actions.
 > Use it only on a trusted network.
 
+## Picks up where you left off
+
+Each project's Claude session is remembered between runs, so relaunching
+`agent-ally` another day **continues the same conversation** — yesterday's plan
+is still in context, not just in the phone transcript. Start clean whenever you
+want with `--fresh`:
+
+```bash
+agent-ally               # continues this project's last session
+agent-ally --fresh       # start a brand-new session for this project
+```
+
+The session id is stored per-project under `~/.agent-ally/sessions/`, alongside
+the phone transcript history in `~/.agent-ally/history/`.
+
 ## Keys
 
 | Key | Action |
