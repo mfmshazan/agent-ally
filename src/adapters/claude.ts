@@ -12,7 +12,10 @@ export class ClaudeAdapter implements AgentAdapter {
 
   async run(prompt: string, ctx: RunContext): Promise<string | void> {
     const { query } = await import("@anthropic-ai/claude-agent-sdk");
-    const canUseTool = createCanUseTool({ present: ctx.present });
+    const canUseTool = createCanUseTool({
+      present: ctx.present,
+      onAutoApprove: (d) => ctx.onNote?.(`Auto-approved: ${d.title}`),
+    });
     const options: Record<string, unknown> = { permissionMode: "default", canUseTool };
     // Resuming a prior session keeps context across turns in interactive mode.
     if (ctx.resume) options.resume = ctx.resume;

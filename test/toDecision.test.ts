@@ -71,6 +71,26 @@ test("AskUserQuestion -> question decision with options", () => {
   );
 });
 
+// --- Edit tools offer "allow all edits this turn" --------------------------
+test("Edit permission includes an allow-all-edits option", () => {
+  const d = toDecision(
+    "Edit",
+    { file_path: "a.tsx", old_string: "x", new_string: "y" },
+    { toolUseID: "x" },
+  );
+  assert.equal(d.kind, "permission");
+  if (d.kind !== "permission") return;
+  assert.deepEqual(
+    d.options.map((o) => o.value),
+    ["allow", "allow_all_edits", "deny"],
+  );
+});
+
+test("Bash permission does NOT offer allow-all-edits", () => {
+  const d = toDecision("Bash", { command: "ls" }, { toolUseID: "x" });
+  assert.equal(d.kind === "permission" && d.options.some((o) => o.value === "allow_all_edits"), false);
+});
+
 // --- Risk classification ---------------------------------------------------
 test("rm -rf is classified high risk", () => {
   const d = toDecision("Bash", { command: "rm -rf build/" }, { toolUseID: "x" });

@@ -14,14 +14,26 @@ import type {
   DecisionOption,
 } from "../types.js";
 import { humanizeToolName, summarizeCommand } from "./humanize.js";
-import { classifyTool } from "../policy/risk.js";
+import { classifyTool, isEditTool } from "../policy/risk.js";
 
-/** Standard allow / deny options offered for a permission prompt. */
-function permissionOptions(): DecisionOption[] {
-  return [
+/**
+ * Options offered for a permission prompt. File-editing tools also get an
+ * "Allow all edits this turn" choice so a phone user isn't tapping Allow for
+ * every single edit in a multi-file change.
+ */
+function permissionOptions(toolName: string): DecisionOption[] {
+  const options: DecisionOption[] = [
     { label: "Allow", description: "Allow this action", value: "allow" },
     { label: "Deny", description: "Deny this action", value: "deny" },
   ];
+  if (isEditTool(toolName)) {
+    options.splice(1, 0, {
+      label: "Allow all edits this turn",
+      description: "Auto-approve file edits until this task finishes",
+      value: "allow_all_edits",
+    });
+  }
+  return options;
 }
 
 function asAskUserQuestion(input: Record<string, unknown>): AskUserQuestionInput | null {
@@ -73,7 +85,7 @@ export function toDecision(
     title,
     riskLevel: classifyTool(toolName, input),
     command,
-    options: permissionOptions(),
+    options: permissionOptions(toolName),
     raw,
   };
 }

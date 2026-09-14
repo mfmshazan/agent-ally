@@ -57,6 +57,37 @@ async function run(): Promise<void> {
     );
   });
 
+  await test("allow_all_edits auto-approves later edits without re-prompting", async () => {
+    let presentCalls = 0;
+    const present: PresentFn = async () => {
+      presentCalls += 1;
+      return { label: "Allow all edits this turn", value: "allow_all_edits" } as DecisionOption;
+    };
+    const notes: string[] = [];
+    const canUseTool = createCanUseTool({ present, onAutoApprove: (d) => notes.push(d.title) });
+
+    const edit = { file_path: "a.txt", old_string: "x", new_string: "y" };
+    const first = await canUseTool("Edit", edit, ctx); // prompts once, opts in
+    const second = await canUseTool("Write", { file_path: "b.txt", content: "hi" }, ctx); // auto
+
+    assert.equal(first.behavior, "allow");
+    assert.equal(second.behavior, "allow");
+    assert.equal(presentCalls, 1, "should only prompt for the first edit");
+    assert.equal(notes.length, 1, "auto-approval should be noted for the log");
+  });
+
+  await test("allow_all_edits does NOT auto-approve shell commands", async () => {
+    let presentCalls = 0;
+    const present: PresentFn = async () => {
+      presentCalls += 1;
+      return { label: "Allow all edits this turn", value: "allow_all_edits" } as DecisionOption;
+    };
+    const canUseTool = createCanUseTool({ present });
+    await canUseTool("Edit", { file_path: "a.txt" }, ctx); // opt in
+    await canUseTool("Bash", { command: "rm -rf build" }, ctx); // must still prompt
+    assert.equal(presentCalls, 2, "shell commands are never auto-approved");
+  });
+
   await test("present failure (Ctrl+C / all channels) fails safe to deny", async () => {
     const canUseTool = createCanUseTool({
       present: async () => {

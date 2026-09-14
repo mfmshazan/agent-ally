@@ -15,6 +15,8 @@ export interface RunContext {
   present: PresentFn;
   /** Called with the agent's user-facing text so it can be spoken. */
   onText?: (text: string) => void | Promise<void>;
+  /** Called with a short status note (e.g. an auto-approved edit) for the log. */
+  onNote?: (text: string) => void;
   /**
    * Resume a prior session so context carries across turns in interactive mode.
    * Adapters that can't resume may ignore this.

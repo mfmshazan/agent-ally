@@ -23,6 +23,14 @@ const DANGEROUS_SHELL = [
   />\s*\/dev\/sd[a-z]/, // writing to a raw disk
 ];
 
+/** Tools that modify files on disk — eligible for "allow all edits this turn". */
+export const EDIT_TOOLS = new Set(["Write", "Edit", "MultiEdit", "NotebookEdit"]);
+
+/** True if the tool writes/changes files (as opposed to reading or running). */
+export function isEditTool(toolName: string): boolean {
+  return EDIT_TOOLS.has(toolName);
+}
+
 /** Classify a shell command string. */
 export function classifyCommand(command: string): RiskLevel {
   const cmd = command.toLowerCase();
