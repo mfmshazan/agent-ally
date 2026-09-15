@@ -4,6 +4,7 @@ import "./history.test.js";
 import "./session.test.js";
 import "./format.test.js";
 import "./chats.test.js";
+import "./claudeSessions.test.js";
 import "./toDecision.test.js";
 import "./announcer.test.js";
 import "./selector.test.js";
