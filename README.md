@@ -15,10 +15,26 @@ points** fully drivable without sight:
 - 🔢 **Options read out** as a numbered list; **current selection spoken** on every move
 - ✅ **Confirmed aloud** before committing (high-risk actions need a second press)
 - 🔁 **Press `R` to repeat** anything you missed
-- 📱 **Answerable from your phone** over your Wi-Fi (accessible web page), or the
-  laptop — whichever responds first wins; the work stays on the laptop
-- 🎛️ **Profiles** pick your control surface: speech + keyboard, speech + phone,
-  or **phone-only** (send prompts *and* approve actions from the phone)
+
+…and because those moments are also answerable from your phone, you're never
+tied to the terminal. Full feature set below.
+
+## What it does
+
+- 🔊 **Accessible decisions** — every permission prompt and multiple-choice
+  question is announced, read out as a numbered list, navigable by keyboard, and
+  confirmed aloud (high-risk actions need a second press).
+- 📱 **Phone control** — drive the agent from an accessible web page on your phone
+  over Wi-Fi: send prompts, approve actions, and **attach screenshots or files**.
+  The QR prints on every launch.
+- 💬 **Multiple chats per project** — like an IDE's conversation list. Each keeps
+  its own Claude session and transcript; `--list`, `--resume`, and in-session
+  `switch` move between them — including sessions you started in the Claude
+  extension or CLI.
+- 🗂️ **Cross-device history** — the transcript replays on the phone (grouped by
+  day) and prints to the terminal with `--history`, so you can move between phone
+  and laptop without losing the thread.
+- 🎛️ **Profiles** — voice + keyboard, voice + phone, or phone-only.
 
 ## Why "agent" not "claude"
 
@@ -42,10 +58,18 @@ validated one. Other agents can plug in as they expose a decision hook.
 - **v0.1** — permission prompts fully driven by speech + keyboard.
 - **v0.3** — multiple-choice questions (`AskUserQuestion`) answered, not just announced.
 - **v0.4** — answer decisions from your phone (LAN, token-secured).
-- **Now** — installable command + adapter seam (Claude is the first adapter).
+- **Now** — installable command, multiple chats per project, phone prompts +
+  file/photo uploads, and cross-device history. Claude is the first adapter.
 
 Both interception mechanisms were validated by spikes first — see
 [docs/FINDINGS.md](docs/FINDINGS.md).
+
+## Requirements
+
+- **Node.js 18+** (uses Web Streams / modern `node:` APIs).
+- **Claude Code authenticated** on this machine — agent-ally reuses its auth via
+  the Claude Agent SDK; there's no separate API key to set.
+- A phone on the **same Wi-Fi** (only if you want phone control).
 
 ## Run it
 
@@ -150,6 +174,14 @@ You move between phone and laptop, so the transcript is reachable from both:
 | `D` | Read the full shell command |
 | Enter | Select (high-risk needs a 2nd Enter) |
 | Ctrl+C | Cancel → denies safely |
+
+## Contributing & feedback
+
+This is accessibility software, so **real-world feedback from screen-reader users
+is the most valuable contribution.** If a decision doesn't read well, an earcon
+is unclear, or the phone flow trips up assistive tech, please open an issue.
+
+Bug reports and PRs welcome. Run `npm test` before submitting.
 
 ## License
 
