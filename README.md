@@ -61,9 +61,13 @@ Install as a command you can run in **any project**:
 ```bash
 npm run build && npm link     # then, from any project folder:
 agent-ally "your prompt"       # one turn
-agent-ally                     # interactive session (type prompts, shared context)
-agent-ally --phone             # + phone control
+agent-ally                     # interactive session (+ phone QR by default)
+agent-ally --no-phone          # laptop/voice only, no phone
 ```
+
+**Phone control is on by default** — the QR prints on every launch (including
+`--new` and `--resume`), so you can always scan and drive from your phone. Pass
+`--no-phone` for a pure laptop/voice session.
 
 ## Profiles — different users, different needs
 
@@ -71,27 +75,28 @@ Not everyone needs the same surfaces. Pick a profile:
 
 | Profile | Who it's for | Speech | Keyboard | Phone |
 |---------|--------------|:------:|:--------:|:-----:|
-| `voice` *(default)* | Blind/low-vision dev at the laptop | ✅ | ✅ | — |
+| `voice` *(default)* | Blind/low-vision dev at the laptop | ✅ | ✅ | on by default |
 | `full` | Voice at the laptop **and** phone | ✅ | ✅ | **prompts + answers** |
 | `phone` | Laptop unattended — the phone is everything | — | — | **prompts + answers** |
 
 ```bash
-agent-ally                          # voice profile (default)
-agent-ally --profile full           # voice + keyboard AND phone (either can act)
+agent-ally                          # voice + keyboard + phone QR (default)
+agent-ally --no-phone               # voice + keyboard only
 agent-ally --profile phone          # drive it entirely from your phone
 agent-ally --profile phone --voice  # phone-driven, but also speak aloud
 ```
 
-In `full`, a prompt can come from **either** the keyboard or the phone —
-whichever you use first drives the next turn; the other surface stays ready.
+A prompt can come from **either** the keyboard or the phone — whichever you use
+first drives the next turn; the other surface stays ready.
 
-In the **phone** profile the phone page shows a text box: type what you want the
-agent to do, hit **Send**, then approve or answer right there — no keyboard, no
-screen at the laptop.
+The phone page shows a text box: type what you want the agent to do, hit
+**Send**, then approve or answer right there. Tap **📎 Attach** to send
+screenshots or files: they're saved into the project so Claude can view images
+and read/edit the files with its normal tools.
 
 Requires Claude Code auth on this machine (the adapter reuses it).
 
-> ⚠️ `--phone` lets any device with the printed link approve the agent's actions.
+> ⚠️ The phone link lets any device on your network approve the agent's actions.
 > Use it only on a trusted network.
 
 ## Picks up where you left off
@@ -102,14 +107,21 @@ conversation** — yesterday's plan is still in context, not just in the phone
 transcript. Start another thread, list them, or switch between them:
 
 ```bash
-agent-ally               # reopen and continue this project's current chat
+agent-ally               # reopen and continue the last-used session
 agent-ally --new         # start a brand-new chat for this project
-agent-ally --list        # list this project's chats (numbered), then exit
-agent-ally --resume 2    # reopen chat #2 from the list (or by its id)
+agent-ally --list        # list this project's past sessions (numbered), then exit
+agent-ally --resume 2    # reopen session #2 from the list (or by its id)
 ```
 
 A new chat is auto-named after its first prompt. Inside a session you can type
-`chats` to see the list or `history` to review the current chat's transcript.
+`chats` to see the list, `switch <number>` to jump to another session live (no
+exit/relaunch needed), or `history` to review the current chat's transcript.
+
+`--list` shows **one unified list of past sessions** for this project — your
+agent-ally chats *and* sessions you started in the Claude extension or CLI,
+merged newest-first with the last-used one marked. Reopening any of them with
+`--resume <number>` (or `switch <number>`) continues right where it left off;
+extension/CLI sessions are adopted as agent-ally chats on first reopen.
 
 Each chat has its own Claude session and its own transcript, stored per-project
 under `~/.agent-ally/projects/`.

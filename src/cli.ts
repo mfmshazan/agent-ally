@@ -8,17 +8,19 @@
  *   phone            — the phone is everything: it sends prompts AND approves
  *                      permissions. Laptop can be unattended. No speech.
  *
+ * Phone control is ON by default (the QR prints on every launch); pass
+ * --no-phone for a pure laptop/voice session.
+ *
  * Usage:
  *   agent-ally "your prompt"                # one turn, then exit
- *   agent-ally                             # interactive session (voice profile)
- *   agent-ally --profile full             # + phone answers decisions
+ *   agent-ally                             # interactive session (+ phone QR)
+ *   agent-ally --no-phone                   # laptop/voice only, no phone/QR
  *   agent-ally --profile phone            # drive everything from your phone
- *   agent-ally --phone                     # add a full phone (typing + answers)
  *   agent-ally --profile phone --voice    # phone-driven, but also speak aloud
  *   agent-ally --silent                    # no audio; prints [SPEAK] lines
  *   agent-ally --new                       # start a brand-new chat for this project
- *   agent-ally --list                      # list this project's chats, then exit
- *   agent-ally --resume 2                  # reopen chat #2 from --list (or by id)
+ *   agent-ally --list                      # list this project's past sessions, then exit
+ *   agent-ally --resume 2                  # reopen session #2 from --list (or by id)
  *   agent-ally --history                   # print the current chat's transcript, then exit
  *   agent-ally --port 5000                 # custom phone port
  *
@@ -43,12 +45,14 @@ import { isProfileName, resolveSurfaces, type ProfileName } from "./config/profi
 import { HistoryStore, defaultHistoryFile } from "./history/store.js";
 import { SessionStore, defaultSessionFile } from "./history/session.js";
 import { formatTranscript } from "./history/format.js";
-import { ChatStore, NEW_CHAT_TITLE } from "./history/chats.js";
+import { ChatStore, NEW_CHAT_TITLE, type ChatMeta } from "./history/chats.js";
+import { listClaudeSessions, type ClaudeSession } from "./history/claudeSessions.js";
 
 interface Args {
   profile?: ProfileName;
   silent: boolean;
   phone: boolean;
+  noPhone: boolean;
   voice: boolean;
   newChat: boolean;
   list: boolean;
@@ -62,6 +66,7 @@ function parseArgs(argv: string[]): Args {
   let profile: ProfileName | undefined;
   let silent = false;
   let phone = false;
+  let noPhone = false;
   let voice = false;
   let newChat = false;
   let list = false;
@@ -73,6 +78,7 @@ function parseArgs(argv: string[]): Args {
     const a = argv[i];
     if (a === "--silent") silent = true;
     else if (a === "--phone") phone = true;
+    else if (a === "--no-phone") noPhone = true;
     else if (a === "--voice") voice = true;
     else if (a === "--new" || a === "--fresh") newChat = true;
     else if (a === "--list" || a === "--chats") list = true;
@@ -88,7 +94,7 @@ function parseArgs(argv: string[]): Args {
       profile = name;
     } else rest.push(a);
   }
-  return { profile, silent, phone, voice, newChat, list, resume, history, port, prompt: rest.join(" ").trim() };
+  return { profile, silent, phone, noPhone, voice, newChat, list, resume, history, port, prompt: rest.join(" ").trim() };
 }
 
 interface LineReader {
@@ -188,7 +194,10 @@ const CHATS_COMMANDS = new Set(["chats", "/chats", "--list", "agent-ally --list"
  * the turn own stdin uncontested) before accepting the next.
  */
 async function runInteractive(opts: InteractiveOptions): Promise<void> {
-  const { adapter, baseCtx, askTerminal, phoneQueue, phoneChannel, onResume, historyStore, chatStore, chatId } = opts;
+  const { adapter, baseCtx, askTerminal, phoneQueue, phoneChannel, onResume, chatStore } = opts;
+  // These change when you switch chats mid-session (the "switch" command).
+  let historyStore = opts.historyStore;
+  let chatId = opts.chatId;
   let resume: string | undefined = opts.initialResume;
 
   // A single outstanding phone read, kept across iterations so a prompt that
@@ -259,8 +268,26 @@ async function runInteractive(opts: InteractiveOptions): Promise<void> {
       }
       if (CHATS_COMMANDS.has(trimmed.toLowerCase())) {
         console.log("");
-        if (chatStore) printChats(chatStore);
-        console.log("\n(Switch chats by relaunching:  agent-ally --resume <number>)\n");
+        if (chatStore) printChats(chatStore, process.cwd());
+        console.log("\n(Switch here with  switch <number>  — no need to relaunch.)\n");
+        continue;
+      }
+      // "switch <n>" jumps to another chat live — no exit/relaunch, and it never
+      // leaks to the agent as a prompt.
+      const sw = trimmed.match(/^(?:switch|\/switch)\s+(.+)$/i);
+      if (sw && chatStore) {
+        const target = resolveResume(chatStore, process.cwd(), sw[1].trim());
+        if (!target) {
+          console.log(`No chat "${sw[1].trim()}". Type "chats" to list them.`);
+          continue;
+        }
+        chatId = target.id;
+        resume = target.sessionId;
+        historyStore = new HistoryStore(chatStore.transcriptFile(target.id));
+        phoneChannel?.setHistory(historyStore);
+        const note = `Switched to: ${target.title}`;
+        console.log(`\n💬 ${note}\n`);
+        phoneChannel?.log("system", note);
         continue;
       }
 
@@ -272,7 +299,11 @@ async function runInteractive(opts: InteractiveOptions): Promise<void> {
       phoneChannel?.status("Working…", true);
       try {
         const next = (await adapter.run(trimmed, { ...baseCtx, resume })) || resume;
-        if (next && next !== resume) onResume?.(next);
+        if (next && next !== resume) {
+          // Persist to whichever chat is current (it may have changed via switch).
+          if (chatStore && chatId) chatStore.update(chatId, { sessionId: next });
+          else onResume?.(next);
+        }
         resume = next;
         if (chatStore && chatId) chatStore.touch(chatId);
       } catch (err) {
@@ -304,21 +335,74 @@ function migrateLegacyChat(store: ChatStore, cwd: string): void {
   if (sessionId) store.update(chat.id, { sessionId });
 }
 
-/** Print the project's chats (for `--list`). */
-function printChats(store: ChatStore): void {
-  const chats = store.list();
-  if (chats.length === 0) {
-    console.log("No chats yet. Start one with:  agent-ally");
+/** Claude Code sessions for this project that agent-ally hasn't adopted yet. */
+function externalSessions(store: ChatStore, cwd: string): ClaudeSession[] {
+  const known = new Set(store.list().map((c) => c.sessionId).filter(Boolean));
+  return listClaudeSessions(cwd).filter((s) => !known.has(s.sessionId));
+}
+
+/** Adopt an external Claude session as an agent-ally chat, and make it current. */
+function adoptSession(store: ChatStore, s: ClaudeSession): ChatMeta {
+  const existing = store.list().find((c) => c.sessionId === s.sessionId);
+  if (existing) return store.switchTo(existing.id) ?? existing;
+  const chat = store.create(s.title === "(untitled)" ? NEW_CHAT_TITLE : s.title.slice(0, 50));
+  store.update(chat.id, { sessionId: s.sessionId });
+  return store.get(chat.id) ?? chat;
+}
+
+/** One entry in the unified "past sessions" list, whatever its origin. */
+interface SessionItem {
+  title: string;
+  updatedAt: string;
+  isCurrent: boolean;
+  chat?: ChatMeta; // an agent-ally chat…
+  session?: ClaudeSession; // …or an as-yet-unadopted Claude session
+}
+
+/**
+ * Every session for this project as one list, newest first: agent-ally chats
+ * and Claude sessions from the extension/CLI, merged and sorted together. The
+ * last-used one (agent-ally's current chat) is flagged.
+ */
+function unifiedSessions(store: ChatStore, cwd: string): SessionItem[] {
+  const currentId = store.current()?.id;
+  const items: SessionItem[] = store
+    .list()
+    .map((c) => ({ title: c.title, updatedAt: c.updatedAt, isCurrent: c.id === currentId, chat: c }));
+  for (const s of externalSessions(store, cwd)) {
+    items.push({ title: s.title, updatedAt: s.updatedAt, isCurrent: false, session: s });
+  }
+  items.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  return items;
+}
+
+/**
+ * Resolve a `--resume`/`switch` selector against the unified list shown by
+ * `--list` (a 1-based position), or a chat id / raw session id. Returns the
+ * now-current chat, or undefined.
+ */
+function resolveResume(store: ChatStore, cwd: string, selector: string): ChatMeta | undefined {
+  const items = unifiedSessions(store, cwd);
+  const n = Number(selector);
+  let target: SessionItem | undefined;
+  if (Number.isInteger(n) && n >= 1 && n <= items.length) target = items[n - 1];
+  target ??= items.find((it) => it.chat?.id === selector || it.session?.sessionId === selector);
+  if (!target) return undefined;
+  return target.chat ? store.switchTo(target.chat.id) : adoptSession(store, target.session!);
+}
+
+/** Print every past session for this project as one list (for `--list`). */
+function printChats(store: ChatStore, cwd: string): void {
+  const items = unifiedSessions(store, cwd);
+  if (items.length === 0) {
+    console.log("No sessions yet. Start one with:  agent-ally");
     return;
   }
-  const currentId = store.current()?.id;
-  console.log("Chats for this project (newest first):\n");
-  chats.forEach((c, i) => {
-    const count = new HistoryStore(store.transcriptFile(c.id)).load().length;
-    const when = new Date(c.updatedAt).toLocaleString();
-    const mark = c.id === currentId ? "   ← current" : "";
-    console.log(`  ${i + 1}. ${c.title}${mark}`);
-    console.log(`      ${count} messages · ${when}`);
+  console.log("Past sessions for this project (newest first):\n");
+  items.forEach((it, i) => {
+    const mark = it.isCurrent ? "   ← last used" : "";
+    console.log(`  ${i + 1}. ${it.title}${mark}`);
+    console.log(`      ${new Date(it.updatedAt).toLocaleString()}`);
   });
   console.log("\nReopen one:   agent-ally --resume <number>");
   console.log("New chat:     agent-ally --new");
@@ -332,22 +416,22 @@ async function main(): Promise<void> {
   const chatStore = new ChatStore(cwd);
   migrateLegacyChat(chatStore, cwd);
 
-  // `--list` shows the chats and exits.
+  // `--list` shows every past session (agent-ally + extension/CLI) and exits.
   if (args.list) {
-    printChats(chatStore);
+    printChats(chatStore, cwd);
     return;
   }
 
   // Choose which chat to open: an explicit --resume, a brand-new chat (--new),
   // or the current one (creating the first chat if none exists).
-  let chat;
+  let chat: ChatMeta;
   if (args.resume) {
-    const found = chatStore.resolve(args.resume);
+    const found = resolveResume(chatStore, cwd, args.resume);
     if (!found) {
       console.error(`No chat "${args.resume}". Run  agent-ally --list  to see them.`);
       process.exit(1);
     }
-    chat = chatStore.switchTo(found.id) ?? found;
+    chat = found;
   } else if (args.newChat) {
     chat = chatStore.create();
   } else {
@@ -366,6 +450,7 @@ async function main(): Promise<void> {
 
   const surfaces = resolveSurfaces(args.profile, {
     phone: args.phone,
+    noPhone: args.noPhone,
     silent: args.silent,
     voice: args.voice,
   });
@@ -423,7 +508,8 @@ async function main(): Promise<void> {
   if (initialResume) {
     const note = "Continuing this chat where you left off.";
     console.log(`↩️  ${note}  (--new for a fresh chat · --list to switch)`);
-    phoneChannel?.log("system", note);
+    // Don't persist this to the transcript — the phone already replays the
+    // thread, and logging it every launch just piles up duplicate notes.
     if (surfaces.voice) await announcer.say(note);
   } else {
     console.log("   New chat.  (--list to see all chats for this project)");
