@@ -28,6 +28,8 @@ export interface Surfaces {
 export interface CliOverrides {
   /** `--phone`: add a fully usable phone (prompts + answers) to any profile. */
   phone?: boolean;
+  /** `--no-phone`: turn the phone off for a pure laptop/voice session. */
+  noPhone?: boolean;
   /** `--silent`: force voice off. */
   silent?: boolean;
   /** `--voice`: force voice on (e.g. voice + phone-driven prompts). */
@@ -51,22 +53,30 @@ export function isProfileName(v: string): v is ProfileName {
  * Overrides win over the profile's defaults. Guarantees at least one input
  * surface exists (if neither terminal nor phone would be active, phone is
  * enabled — otherwise the agent could never be prompted).
+ *
+ * Phone control is ON by default so the QR is always available to scan; pass
+ * `--no-phone` for a pure laptop/voice session.
  */
 export function resolveSurfaces(
   profile: ProfileName = DEFAULT_PROFILE,
   overrides: CliOverrides = {},
 ): Surfaces {
   const s: Surfaces = { ...BASE[profile] };
-  // --phone adds a *fully usable* phone: it can both send prompts (input field)
-  // and answer decisions. (Answer-only was a confusing half-mode.)
-  if (overrides.phone) {
+  if (overrides.silent) s.voice = false;
+  if (overrides.voice) s.voice = true;
+  // Phone is a fully usable surface (prompts + answers) unless explicitly off.
+  // (--phone stays accepted as an explicit on, but it's the default now.)
+  if (overrides.noPhone) {
+    s.phone = false;
+    s.phonePrompts = false;
+  } else {
     s.phone = true;
     s.phonePrompts = true;
   }
-  if (overrides.silent) s.voice = false;
-  if (overrides.voice) s.voice = true;
   // Never end up with no way to drive the agent.
-  if (!s.terminal && !s.phone) s.phone = true;
-  if (!s.terminal && s.phone) s.phonePrompts = true;
+  if (!s.terminal && !s.phone) {
+    s.phone = true;
+    s.phonePrompts = true;
+  }
   return s;
 }

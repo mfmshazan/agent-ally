@@ -1,9 +1,16 @@
 import assert from "node:assert";
 import { resolveSurfaces } from "../src/config/profile.js";
 
-// Default (voice) — speech + keyboard, no phone.
+// Default (voice) — speech + keyboard, and phone control is on by default so the
+// QR is always available.
 {
   const s = resolveSurfaces("voice");
+  assert.deepEqual(s, { voice: true, terminal: true, phone: true, phonePrompts: true });
+}
+
+// --no-phone opts out for a pure laptop/voice session.
+{
+  const s = resolveSurfaces("voice", { noPhone: true });
   assert.deepEqual(s, { voice: true, terminal: true, phone: false, phonePrompts: false });
 }
 
@@ -44,11 +51,11 @@ import { resolveSurfaces } from "../src/config/profile.js";
   assert.equal(s.phonePrompts, true); // the phone gets an input field
 }
 
-// Default profile is voice when none supplied.
+// Default profile is voice when none supplied (phone on by default).
 {
   const s = resolveSurfaces();
   assert.equal(s.terminal, true);
-  assert.equal(s.phone, false);
+  assert.equal(s.phone, true);
 }
 
 console.log("profile.test: ok");
