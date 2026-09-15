@@ -9,10 +9,10 @@
  */
 
 import http from "node:http";
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
+import { basename, dirname, extname, join, relative, sep } from "node:path";
 import { networkInterfaces } from "node:os";
 import { WebSocketServer, type WebSocket } from "ws";
 import type { Decision, DecisionOption } from "../types.js";
@@ -83,7 +83,12 @@ export class PhoneChannel implements DecisionChannel {
   /** Server-side transcript so a reloaded / newly-joined phone sees the thread. */
   private readonly history: HistoryEntry[];
   private readonly maxHistory = 300;
-  private readonly store?: HistoryStore;
+  private store?: HistoryStore;
+  /** Cap uploads so a phone can't fill the disk or blow memory. */
+  private readonly maxUploads = 10;
+  private readonly maxUploadBytes = 25 * 1024 * 1024;
+  /** Where uploaded files land — the project root, so Claude can open them. */
+  private readonly uploadDir = process.cwd();
 
   constructor(opts: PhoneChannelOptions = {}) {
     this.token = opts.token ?? randomBytes(8).toString("hex");
@@ -101,6 +106,17 @@ export class PhoneChannel implements DecisionChannel {
     this.promptHandler = handler;
   }
 
+  /**
+   * Point the phone at a different chat's transcript (used when switching chats
+   * mid-session): swap the store, reload the thread, and push it to any phones.
+   */
+  setHistory(store: HistoryStore): void {
+    this.store = store;
+    this.history.length = 0;
+    this.history.push(...store.load());
+    this.broadcast({ type: "history", entries: this.history });
+  }
+
   /** Push a line of the agent's reply (or a note) to the phone transcript. */
   log(role: "agent" | "you" | "system", text: string): void {
     const entry = this.remember(role, text);
@@ -116,6 +132,57 @@ export class PhoneChannel implements DecisionChannel {
     }
     this.store?.append(entry);
     return entry;
+  }
+
+  /**
+   * Save phone uploads (base64 data URLs) into the project root so the agent can
+   * open them — Claude's Read tool views images and reads/edits text files. Skips
+   * oversized/empty payloads and never overwrites an existing file. Returns the
+   * project-relative paths that were written.
+   */
+  private saveUploads(files: Array<{ name?: string; data?: string }>): string[] {
+    const saved: string[] = [];
+    for (const f of files.slice(0, this.maxUploads)) {
+      if (!f?.data) continue;
+      const comma = f.data.indexOf(",");
+      const b64 = comma >= 0 ? f.data.slice(comma + 1) : f.data; // strip data: URL prefix
+      let buf: Buffer;
+      try {
+        buf = Buffer.from(b64, "base64");
+      } catch {
+        continue;
+      }
+      if (buf.length === 0 || buf.length > this.maxUploadBytes) continue;
+      const target = this.uniquePath(this.safeFilename(f.name));
+      try {
+        writeFileSync(target, buf);
+        saved.push("./" + relative(this.uploadDir, target).split(sep).join("/"));
+      } catch {
+        /* skip a file we can't write */
+      }
+    }
+    return saved;
+  }
+
+  /** A safe basename: no path traversal, no odd characters. */
+  private safeFilename(name?: string): string {
+    const base = basename(name ?? "")
+      .replace(/[^a-zA-Z0-9._-]/g, "_")
+      .replace(/^\.+/, "");
+    return base || `upload-${Date.now()}`;
+  }
+
+  /** The given name, or name-1/name-2/… if it already exists in the project. */
+  private uniquePath(name: string): string {
+    let p = join(this.uploadDir, name);
+    if (!existsSync(p)) return p;
+    const ext = extname(name);
+    const stem = name.slice(0, name.length - ext.length);
+    for (let i = 1; i < 1000; i += 1) {
+      p = join(this.uploadDir, `${stem}-${i}${ext}`);
+      if (!existsSync(p)) return p;
+    }
+    return join(this.uploadDir, `${stem}-${Date.now()}${ext}`);
   }
 
   /** Update the phone's status line and busy state (hides/shows composer). */
@@ -176,7 +243,13 @@ export class PhoneChannel implements DecisionChannel {
   }
 
   private onMessage(raw: string): void {
-    let msg: { type?: string; toolUseId?: string; value?: string; text?: string };
+    let msg: {
+      type?: string;
+      toolUseId?: string;
+      value?: string;
+      text?: string;
+      files?: Array<{ name?: string; data?: string }>;
+    };
     try {
       msg = JSON.parse(raw);
     } catch {
@@ -184,10 +257,21 @@ export class PhoneChannel implements DecisionChannel {
     }
     if (msg.type === "prompt") {
       const text = (msg.text ?? "").trim();
-      if (text && this.acceptsPrompts && this.promptHandler) {
-        this.log("you", text);
-        this.promptHandler(text);
-      }
+      const files = Array.isArray(msg.files) ? msg.files : [];
+      if ((!text && files.length === 0) || !this.acceptsPrompts || !this.promptHandler) return;
+      const saved = this.saveUploads(files);
+      // Show the user's message + attachment names in the thread…
+      const shown = [text, ...saved.map((p) => `📎 ${p}`)].filter(Boolean).join("\n");
+      this.log("you", shown || "(sent attachments)");
+      // …and tell the agent where to find the files it can now open/edit.
+      const forAgent = saved.length
+        ? `${text}${text ? "\n\n" : ""}I've attached ${
+            saved.length === 1 ? "a file" : `${saved.length} files`
+          } to the project — please open ${saved.length === 1 ? "it" : "them"}:\n${saved
+            .map((p) => `- ${p}`)
+            .join("\n")}`
+        : text;
+      this.promptHandler(forAgent);
       return;
     }
     if (msg.type !== "answer" || !this.pending) return;

@@ -52,12 +52,25 @@
         display: flex; flex-direction: column;
         position: sticky; bottom: 0;
         background: #12131a;
-        padding: 0.6rem 0 0.5rem;
+        padding: 0.6rem 0 calc(0.7rem + env(safe-area-inset-bottom));
         border-top: 1px solid #23242e;
       }
-      #prompt { width: 100%; min-height: 3.5rem; padding: 0.8rem; font-size: 1.05rem; border-radius: 12px; border: 1px solid #333; background: #0d0e14; color: #f2f3f7; resize: vertical; }
-      #send { background: #2f6f3e; }
-      #send:disabled { opacity: 0.5; }
+      .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); border: 0; }
+      /* One-row composer: attach · text · send, all inside a rounded pill. */
+      .input-bar { display: flex; align-items: flex-end; gap: 0.25rem; width: 100%; border: 1px solid #333; border-radius: 22px; background: #0d0e14; padding: 0.25rem 0.4rem; }
+      .input-bar:focus-within { border-color: #2b6ef2; }
+      #prompt { flex: 1; min-width: 0; min-height: 1.6rem; max-height: 8rem; padding: 0.5rem 0.2rem; font-size: 1.05rem; line-height: 1.35; border: 0; background: transparent; color: #f2f3f7; resize: none; overflow-y: auto; }
+      #prompt:focus { outline: none; }
+      .icon-btn { flex: 0 0 auto; margin: 0; padding: 0; width: auto; display: flex; align-items: center; justify-content: center; border-radius: 999px; line-height: 1; }
+      #attach { width: 2.2rem; height: 2.2rem; background: transparent; color: #8fa6c9; font-size: 1.25rem; }
+      #attach:active { color: #2b6ef2; }
+      #send { width: 2.3rem; height: 2.3rem; background: #2f6f3e; color: #fff; font-size: 1.15rem; }
+      #send:disabled { opacity: 0.4; }
+      #attachments { display: flex; flex-wrap: wrap; gap: 0.4rem; margin: 0.2rem 0; }
+      #attachments:empty { display: none; }
+      .chip { display: inline-flex; align-items: center; gap: 0.35rem; background: #23324d; padding: 0.3rem 0.55rem; border-radius: 999px; font-size: 0.82rem; max-width: 100%; }
+      .chip span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 12rem; }
+      .chip button { display: inline; width: auto; margin: 0; padding: 0 0.2rem; font-size: 1rem; background: transparent; color: #cdd; line-height: 1; }
     </style>
   </head>
   <body>
@@ -68,9 +81,14 @@
     <div id="transcript" aria-live="polite" aria-label="Conversation"></div>
 
     <form id="composer" aria-label="Send a prompt">
-      <label for="prompt">Tell the agent what to do</label>
-      <textarea id="prompt" placeholder="e.g. add a .gitignore for Node"></textarea>
-      <button type="submit" id="send">Send</button>
+      <label for="prompt" class="sr-only">Tell the agent what to do</label>
+      <div id="attachments" aria-live="polite"></div>
+      <input type="file" id="file" multiple hidden aria-hidden="true" />
+      <div class="input-bar">
+        <button type="button" id="attach" class="icon-btn" aria-label="Attach files" title="Attach">📎</button>
+        <textarea id="prompt" rows="1" placeholder="Message…"></textarea>
+        <button type="submit" id="send" class="icon-btn" aria-label="Send" title="Send">➤</button>
+      </div>
     </form>
 
     <script>
@@ -81,6 +99,43 @@
       const composerEl = document.getElementById("composer");
       const promptEl = document.getElementById("prompt");
       const sendEl = document.getElementById("send");
+      const fileEl = document.getElementById("file");
+      const attachEl = document.getElementById("attach");
+      const attachmentsEl = document.getElementById("attachments");
+
+      const MAX_FILE_BYTES = 25 * 1024 * 1024; // keep in step with the server cap
+      const MAX_FILES = 10;
+      let pendingFiles = []; // { name, data } where data is a base64 data URL
+
+      attachEl.addEventListener("click", () => fileEl.click());
+      fileEl.addEventListener("change", () => {
+        for (const file of Array.from(fileEl.files || [])) {
+          if (pendingFiles.length >= MAX_FILES) { alert(`Up to ${MAX_FILES} files at a time.`); break; }
+          if (file.size > MAX_FILE_BYTES) { alert(`"${file.name}" is too big (max 25 MB).`); continue; }
+          const reader = new FileReader();
+          reader.onload = () => { pendingFiles.push({ name: file.name, data: reader.result }); renderAttachments(); };
+          reader.readAsDataURL(file);
+        }
+        fileEl.value = ""; // allow re-picking the same file later
+      });
+
+      function renderAttachments() {
+        attachmentsEl.innerHTML = "";
+        pendingFiles.forEach((f, i) => {
+          const chip = document.createElement("div");
+          chip.className = "chip";
+          const name = document.createElement("span");
+          name.textContent = f.name;
+          const rm = document.createElement("button");
+          rm.type = "button";
+          rm.textContent = "×";
+          rm.setAttribute("aria-label", `Remove ${f.name}`);
+          rm.onclick = () => { pendingFiles.splice(i, 1); renderAttachments(); };
+          chip.appendChild(name);
+          chip.appendChild(rm);
+          attachmentsEl.appendChild(chip);
+        });
+      }
 
       let current = null; // in-flight decision
       let armed = null; // value awaiting a confirm tap (high-risk)
@@ -222,12 +277,29 @@
         refreshComposer();
       }
 
+      // Grow the box with the text (one line by default), capped by max-height.
+      function autoGrow() {
+        promptEl.style.height = "auto";
+        promptEl.style.height = Math.min(promptEl.scrollHeight, 128) + "px";
+      }
+      promptEl.addEventListener("input", autoGrow);
+      // Enter sends; Shift+Enter makes a newline.
+      promptEl.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" && !e.shiftKey) {
+          e.preventDefault();
+          composerEl.requestSubmit();
+        }
+      });
+
       composerEl.addEventListener("submit", (e) => {
         e.preventDefault();
         const text = promptEl.value.trim();
-        if (!text || !ws || ws.readyState !== WebSocket.OPEN) return;
-        ws.send(JSON.stringify({ type: "prompt", text }));
+        if ((!text && pendingFiles.length === 0) || !ws || ws.readyState !== WebSocket.OPEN) return;
+        ws.send(JSON.stringify({ type: "prompt", text, files: pendingFiles }));
         promptEl.value = "";
+        autoGrow();
+        pendingFiles = [];
+        renderAttachments();
       });
 
       function render(decision, note) {
