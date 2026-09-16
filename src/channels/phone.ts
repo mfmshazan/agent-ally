@@ -204,7 +204,7 @@ export class PhoneChannel implements DecisionChannel {
         res.writeHead(401).end("unauthorized");
         return;
       }
-      res.writeHead(200, { "content-type": "text/html; charset=utf-8" }).end(this.html);
+      res.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" }).end(this.html);
     });
 
     const wss = new WebSocketServer({ noServer: true });
