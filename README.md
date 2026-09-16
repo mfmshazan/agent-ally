@@ -299,6 +299,35 @@ When the AI agent needs a decision, this is what you hear:
 
 ---
 
+## Troubleshooting
+
+**"Couldn't reach Claude — it looks like Claude Code isn't logged in"**
+agent-ally reuses Claude Code's login. If you see this after sending a prompt,
+Claude Code isn't authenticated on this machine. Fix it:
+
+```bash
+claude          # complete the login in your browser when prompted
+```
+
+Then run `agent-ally` again. (See [Setup → Step 2](#step-2--install-and-authenticate-claude-code).)
+
+**The phone page looks out of date after an update**
+Your phone browser cached the old page. Open it in a fresh/incognito tab, or
+clear the site data. From v0.1.2 on, the server sends `Cache-Control: no-store`
+so this shouldn't recur.
+
+**The 🎤 mic button doesn't appear on the phone**
+Voice input needs a secure connection. Start with `agent-ally --https` and accept
+the one-time certificate warning on the phone — see
+[Talk to it from your phone](#talk-to-it-from-your-phone-voice-input).
+
+**The phone can't connect at all**
+Make sure the phone is on the **same Wi-Fi network** as the computer, and that a
+firewall isn't blocking the port. Some "guest" networks isolate devices from each
+other — use a normal network or a personal hotspot.
+
+---
+
 ## Project structure
 
 ```
