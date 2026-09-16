@@ -1,5 +1,9 @@
 # agent-ally
 
+[![npm version](https://img.shields.io/npm/v/agent-ally)](https://www.npmjs.com/package/agent-ally)
+[![npm downloads](https://img.shields.io/npm/dm/agent-ally)](https://www.npmjs.com/package/agent-ally)
+[![license](https://img.shields.io/npm/l/agent-ally)](LICENSE)
+
 **An accessibility-first control layer for AI coding agents — driven by speech,
 keyboard, and your phone.**
 
@@ -101,7 +105,7 @@ npm install -g agent-ally
 ```
 
 That's it. The `agent-ally` command is now available globally in every terminal
-session on that machine.
+session on that machine. No cloning, no building — npm handles everything.
 
 ### Step 4 — Use it in any project
 
