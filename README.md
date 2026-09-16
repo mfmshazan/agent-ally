@@ -5,183 +5,321 @@ keyboard, and your phone.**
 
 The name is a pun: **a11y** (accessibility) + **ally** (a helper on your side).
 
-AI coding agents pause to ask the developer things — *"Can I run this command?"*,
-*"Which option do you want?"* — and in the terminal those are arrow-key widgets
-that screen readers handle poorly. They're also the **highest-stakes** moments
-(approving a shell command, a file write). agent-ally makes those **decision
-points** fully drivable without sight:
+---
 
-- 🔊 **Announced** the instant they appear (text-to-speech + distinct earcons)
-- 🔢 **Options read out** as a numbered list; **current selection spoken** on every move
-- ✅ **Confirmed aloud** before committing (high-risk actions need a second press)
-- 🔁 **Press `R` to repeat** anything you missed
+## The problem
 
-…and because those moments are also answerable from your phone, you're never
-tied to the terminal. Full feature set below.
+AI coding agents (like Claude Code) pause mid-task to ask the developer for
+permission — *"Can I run this command?"*, *"Which option do you want?"*. In the
+terminal those decisions use arrow-key widgets and streaming output that **screen
+readers handle poorly**. They are also the **highest-stakes moments** in the
+whole session: approving a shell command, allowing a file write, choosing between
+options. Skipping or guessing them is not safe.
+
+agent-ally solves this by wrapping the agent's decision loop in a fully
+accessible experience — every decision is **announced**, **navigated by
+keyboard**, and **confirmed aloud** before anything commits. You can also approve
+decisions from your **phone over Wi-Fi**, so you are never tied to the terminal.
+
+---
+
+## Demo
+
+https://github.com/user-attachments/assets/82c9d17d-67ac-467d-8b08-21d61fe1774f
+
+---
 
 ## What it does
 
-- 🔊 **Accessible decisions** — every permission prompt and multiple-choice
-  question is announced, read out as a numbered list, navigable by keyboard, and
-  confirmed aloud (high-risk actions need a second press).
-- 📱 **Phone control** — drive the agent from an accessible web page on your phone
-  over Wi-Fi: send prompts, approve actions, and **attach screenshots or files**.
-  The QR prints on every launch.
-- 💬 **Multiple chats per project** — like an IDE's conversation list. Each keeps
-  its own Claude session and transcript; `--list`, `--resume`, and in-session
-  `switch` move between them — including sessions you started in the Claude
-  extension or CLI.
-- 🗂️ **Cross-device history** — the transcript replays on the phone (grouped by
-  day) and prints to the terminal with `--history`, so you can move between phone
-  and laptop without losing the thread.
-- 🎛️ **Profiles** — voice + keyboard, voice + phone, or phone-only.
+| Feature | Description |
+|---------|-------------|
+| 🔊 **Spoken decisions** | Every permission prompt and multiple-choice question is read aloud the instant it appears — earcon, then full text, then your options as a numbered list. |
+| 🔢 **Keyboard navigation** | Arrow keys / number keys move between options; each move is spoken. Enter commits (high-risk needs a second Enter). `R` replays the whole decision. `D` reads the full shell command. |
+| ✅ **Spoken confirmation** | The committed choice is spoken aloud before the agent continues. High-risk actions require an explicit second press. |
+| 📱 **Phone control** | Scan a QR code at launch, then send prompts and approve decisions from a web page on your phone — over your local Wi-Fi network. No app to install. |
+| 📎 **File & photo uploads** | Tap the attach button on the phone page to send screenshots or files. They are saved into your project so Claude can view images and read or edit files with its normal tools. |
+| 💬 **Multiple chats** | Each project keeps a conversation list like an IDE agent panel. Relaunch and continue any past chat; start a new thread whenever you want. |
+| 🗂️ **Cross-device history** | The transcript replays on the phone (grouped by day with timestamps) and prints to the terminal with `--history`. Move between phone and laptop without losing the thread. |
+| 🔁 **Session resume** | Reopening a chat resumes the same Claude session — yesterday's plan is still in context, not just in the transcript. |
 
-## Why "agent" not "claude"
+---
 
-The accessibility engine (speech, keyboard, phone) is **agent-agnostic** — it
-just needs a decision to present. Only the *interception* is agent-specific, so
-agent-ally is built around a pluggable **adapter** seam:
+## How it works
 
 ```
-Adapter (per agent)              Accessibility engine (universal)
-  └─ Claude Code (flagship) ──►  announce · navigate · phone · answer
-     (future: other open agents, or a generic terminal wrapper)
+You  ──► agent-ally ──► Claude Code (AI agent)
+              │                │
+         speaks &         pauses on
+         navigates        every decision
+         decisions   ◄────────┘
+              │
+         Phone (Wi-Fi) ◄──► same decisions, from anywhere
 ```
 
-Today the **Claude Code adapter** (via the Agent SDK's `canUseTool`) is the solid,
-validated one. Other agents can plug in as they expose a decision hook.
+agent-ally sits between you and the AI agent. When the agent needs a decision
+it calls agent-ally, which announces it on all your active surfaces (terminal
+voice + phone) and waits for your answer. The first surface to receive an answer
+wins; the others are silenced.
 
-## Status
+The **Claude Code adapter** (via the Claude Agent SDK's `canUseTool` hook) is
+the flagship integration. The engine itself is agent-agnostic — other agents can
+plug in through the same adapter interface.
 
-🚧 Early development.
+---
 
-- **v0.1** — permission prompts fully driven by speech + keyboard.
-- **v0.3** — multiple-choice questions (`AskUserQuestion`) answered, not just announced.
-- **v0.4** — answer decisions from your phone (LAN, token-secured).
-- **Now** — installable command, multiple chats per project, phone prompts +
-  file/photo uploads, and cross-device history. Claude is the first adapter.
+## Setup (new machine)
 
-Both interception mechanisms were validated by spikes first — see
-[docs/FINDINGS.md](docs/FINDINGS.md).
+Follow these steps once on any machine where you want to use agent-ally.
 
-## Requirements
+### Step 1 — Install Node.js 18+
 
-- **Node.js 18+** (uses Web Streams / modern `node:` APIs).
-- **Claude Code authenticated** on this machine — agent-ally reuses its auth via
-  the Claude Agent SDK; there's no separate API key to set.
-- A phone on the **same Wi-Fi** (only if you want phone control).
-
-## Run it
+Download from [nodejs.org](https://nodejs.org) and install. Verify:
 
 ```bash
-npm install
-npm start -- "create a file hello.txt that says hi"     # terminal only
-npm start -- --phone "ask me to pick cat or dog"        # + phone (scan the QR)
-npm test                                                 # no tokens (replays fixtures)
+node --version   # should print v18.x or higher
 ```
 
-Install as a command you can run in **any project**:
+### Step 2 — Install and authenticate Claude Code
+
+agent-ally drives Claude through the Claude Agent SDK, so **Claude Code must be
+installed and signed in with your own Anthropic account** on that machine.
 
 ```bash
-npm run build && npm link     # then, from any project folder:
-agent-ally "your prompt"       # one turn
-agent-ally                     # interactive session (+ phone QR by default)
-agent-ally --no-phone          # laptop/voice only, no phone
+npm install -g @anthropic-ai/claude-code
+claude          # follow the login prompt to authenticate
+claude --version  # verify it works
 ```
 
-**Phone control is on by default** — the QR prints on every launch (including
-`--new` and `--resume`), so you can always scan and drive from your phone. Pass
-`--no-phone` for a pure laptop/voice session.
+> Claude Code requires an [Anthropic account](https://claude.ai) with an active
+> subscription or API access. agent-ally reuses that auth — there is no
+> separate API key to configure.
 
-## Profiles — different users, different needs
-
-Not everyone needs the same surfaces. Pick a profile:
-
-| Profile | Who it's for | Speech | Keyboard | Phone |
-|---------|--------------|:------:|:--------:|:-----:|
-| `voice` *(default)* | Blind/low-vision dev at the laptop | ✅ | ✅ | on by default |
-| `full` | Voice at the laptop **and** phone | ✅ | ✅ | **prompts + answers** |
-| `phone` | Laptop unattended — the phone is everything | — | — | **prompts + answers** |
+### Step 3 — Install agent-ally
 
 ```bash
-agent-ally                          # voice + keyboard + phone QR (default)
-agent-ally --no-phone               # voice + keyboard only
-agent-ally --profile phone          # drive it entirely from your phone
-agent-ally --profile phone --voice  # phone-driven, but also speak aloud
+npm install -g agent-ally
 ```
 
-A prompt can come from **either** the keyboard or the phone — whichever you use
-first drives the next turn; the other surface stays ready.
+That's it. The `agent-ally` command is now available globally in every terminal
+session on that machine.
 
-The phone page shows a text box: type what you want the agent to do, hit
-**Send**, then approve or answer right there. Tap **📎 Attach** to send
-screenshots or files: they're saved into the project so Claude can view images
-and read/edit the files with its normal tools.
-
-Requires Claude Code auth on this machine (the adapter reuses it).
-
-> ⚠️ The phone link lets any device on your network approve the agent's actions.
-> Use it only on a trusted network.
-
-## Picks up where you left off
-
-Each project keeps **multiple chats** — like the conversation list in an IDE
-agent. Relaunching `agent-ally` reopens the current chat and **continues the same
-conversation** — yesterday's plan is still in context, not just in the phone
-transcript. Start another thread, list them, or switch between them:
+### Step 4 — Use it in any project
 
 ```bash
-agent-ally               # reopen and continue the last-used session
-agent-ally --new         # start a brand-new chat for this project
-agent-ally --list        # list this project's past sessions (numbered), then exit
-agent-ally --resume 2    # reopen session #2 from the list (or by its id)
+cd ~/my-project           # go to YOUR project (any folder on your machine)
+agent-ally                # start an interactive session with phone QR
+agent-ally "add a README" # or run a single prompt and exit
 ```
 
-A new chat is auto-named after its first prompt. Inside a session you can type
-`chats` to see the list, `switch <number>` to jump to another session live (no
-exit/relaunch needed), or `history` to review the current chat's transcript.
+agent-ally runs Claude inside **your** project's directory. It reads and writes
+your files, never the agent-ally folder itself.
 
-`--list` shows **one unified list of past sessions** for this project — your
-agent-ally chats *and* sessions you started in the Claude extension or CLI,
-merged newest-first with the last-used one marked. Reopening any of them with
-`--resume <number>` (or `switch <number>`) continues right where it left off;
-extension/CLI sessions are adopted as agent-ally chats on first reopen.
+---
 
-Each chat has its own Claude session and its own transcript, stored per-project
-under `~/.agent-ally/projects/`.
+## Quick start (if already set up)
 
-### Reading back the history
+```bash
+cd ~/my-project
 
-You move between phone and laptop, so the transcript is reachable from both:
+agent-ally                # interactive session — phone QR printed automatically
+agent-ally "your prompt"  # one-shot prompt, then exit
+agent-ally --no-phone     # voice + keyboard only, no QR
+```
 
-- **On the phone** — the full conversation replays on connect, grouped by day
-  (Today / Yesterday / date) with a time on each message. Scroll back to review
-  what was planned before sending the next prompt.
-- **On the laptop** — print the same transcript to the terminal (clean text your
-  screen reader can read straight through), then exit:
+---
 
-  ```bash
-  agent-ally --history
-  ```
+## All commands
 
-## Keys
+### Starting a session
+
+```bash
+agent-ally                          # interactive session, phone QR printed by default
+agent-ally "your prompt here"       # one-shot: run a single prompt and exit
+agent-ally --no-phone               # interactive, no phone surface (voice + keyboard only)
+agent-ally --profile phone          # phone is everything — no terminal input needed
+agent-ally --profile phone --voice  # phone-driven, but also speak decisions aloud
+agent-ally --silent                 # no audio; prints [SPEAK] lines instead (useful for CI/debug)
+agent-ally --port 5000              # use a custom port for the phone server (default: random)
+```
+
+### Managing chats
+
+Each project keeps **multiple independent chats** — like the conversation list
+in VS Code's Copilot or Cursor. Every chat has its own Claude session and its
+own transcript.
+
+```bash
+agent-ally                  # reopen and continue the last-used chat for this project
+agent-ally --new            # start a brand-new chat (auto-named after the first prompt)
+agent-ally --list           # list all past chats for this project (numbered), then exit
+agent-ally --resume 2       # reopen chat number 2 from the list
+agent-ally --resume <id>    # reopen a chat by its full id
+```
+
+**Inside a running session** you can type these at the `you>` prompt:
+
+```
+chats              # print the chat list for this project
+switch 2           # jump to chat number 2 live — no need to exit and relaunch
+switch <id>        # jump by full chat id
+history            # print this chat's full transcript inline
+exit               # end the session (also: quit, or Ctrl+D, or Ctrl+C)
+```
+
+### Reviewing history
+
+```bash
+agent-ally --history        # print the current chat's full transcript, then exit
+```
+
+On the phone the full conversation replays automatically when you connect,
+grouped by day (Today / Yesterday / date) with a timestamp on each message.
+Scroll up to review what was planned before sending the next prompt.
+
+---
+
+## Phone control
+
+Phone control is **on by default**. Every time you launch agent-ally a QR code
+is printed in the terminal. Scan it with your phone (same Wi-Fi network) and
+you get a web page where you can:
+
+- **Send prompts** — type what you want the agent to do and tap Send.
+- **Approve or deny** — every permission request appears on the phone at the
+  same time as the terminal announcement; tap to answer from either surface.
+- **Attach files or photos** — tap the 📎 button to pick files from your phone.
+  They are saved into the project folder so Claude can read images and edit files
+  directly.
+
+```bash
+agent-ally                # phone on (default) — QR printed on every launch
+agent-ally --no-phone     # opt out for a pure laptop/voice session
+```
+
+> ⚠️ The phone link lets any device on your local network approve the agent's
+> actions. Use it only on a trusted network (home, personal hotspot).
+
+---
+
+## Profiles
+
+Different users need different surfaces. A profile sets the defaults:
+
+| Profile | Best for | Speech | Keyboard | Phone |
+|---------|----------|:------:|:--------:|:-----:|
+| `voice` *(default)* | Blind / low-vision dev at the laptop | ✅ | ✅ | QR by default |
+| `full` | Voice at the laptop **and** full phone answers | ✅ | ✅ | ✅ |
+| `phone` | Laptop unattended — phone drives everything | — | — | ✅ |
+
+```bash
+agent-ally                          # voice profile (speech + keyboard + phone QR)
+agent-ally --no-phone               # voice profile, no phone
+agent-ally --profile full           # voice + full phone prompts and answers
+agent-ally --profile phone          # phone-only — no terminal input
+agent-ally --profile phone --voice  # phone-only, but also speak decisions aloud
+agent-ally --profile voice --silent # keyboard only, no audio
+```
+
+---
+
+## Keyboard shortcuts (during a decision)
+
+These work while agent-ally is waiting for your answer at a permission or
+question prompt:
 
 | Key | Action |
 |-----|--------|
-| ↑ / ↓ (or `j`/`k`) | Move between options (each spoken) |
-| `1`–`9` | Jump to an option |
-| `R` | Repeat the whole decision |
-| `D` | Read the full shell command |
-| Enter | Select (high-risk needs a 2nd Enter) |
-| Ctrl+C | Cancel → denies safely |
+| `↑` / `↓` or `k` / `j` | Move between options (each spoken immediately) |
+| `1` – `9` | Jump directly to that option (1-based) |
+| `R` | Repeat the full decision — earcon + text + options + hint |
+| `D` | Read the full shell command (permission prompts only) |
+| `Enter` | Commit the highlighted option |
+| `Enter` *(second press)* | Confirm a high-risk action after the first press |
+| `Ctrl+C` | Cancel — safely denies the current decision |
+
+---
+
+## How decisions are announced
+
+When the AI agent needs a decision, this is what you hear:
+
+1. **Earcon** — two tones that signal "the agent is blocked on you".
+2. **Intro** — `"Permission needed. <what the agent wants to do>. <risk level>."`
+   or `"Claude is asking. <question>."` for multiple-choice questions.
+3. **Options** — `"Options: 1, Allow. 2, Deny. 3, Allow all edits."` (all in
+   one breath — no gaps between items).
+4. **Hint** — `"Use the arrow keys or number keys to choose, then press enter.
+   Press R to repeat. Press D to hear the full command."`
+5. **Selection** — as soon as you move, the new option is spoken:
+   `"2 of 3, Deny."`
+6. **Confirmation** — when you commit: `"Allow selected."` High-risk choices ask
+   `"Confirm Allow? Press enter again to confirm."` before committing.
+
+---
+
+## Data & privacy
+
+- **Transcripts** are stored locally under `~/.agent-ally/projects/` — one
+  folder per project, one file per chat. Nothing is sent to a remote server by
+  agent-ally itself.
+- **Claude's API calls** go through the Claude Agent SDK and Anthropic's servers,
+  exactly as they would with Claude Code directly. agent-ally adds no additional
+  network calls.
+- **The phone server** is local-only (LAN). The access token is generated fresh
+  each launch and is only valid on your local network.
+
+---
+
+## Project structure
+
+```
+src/
+  adapters/      # Agent adapters (claude.ts is the flagship)
+  announcer/     # Text-to-speech + earcons (tts.ts, announcer.ts, earcons.ts)
+  channels/      # Decision surfaces (terminal.ts, phone.ts, client.html)
+  config/        # Profiles and surface resolution (profile.ts)
+  history/       # Transcript, session, multi-chat store, Claude session reader
+  input/         # Keyboard navigation state machine (selector.ts, keyboard.ts)
+  interceptor/   # SDK decision normalisation (toDecision.ts, answer.ts)
+  policy/        # Risk classification (risk.ts)
+  coordinator.ts # Races channels; first answer wins
+  permissionHandler.ts  # canUseTool wiring
+  cli.ts         # Entry point — argument parsing, surface setup, interactive loop
+test/            # Node assert tests (no tokens; fixture-driven)
+docs/
+  FINDINGS.md    # Spike notes: how canUseTool interception was validated
+```
+
+---
 
 ## Contributing & feedback
 
-This is accessibility software, so **real-world feedback from screen-reader users
-is the most valuable contribution.** If a decision doesn't read well, an earcon
-is unclear, or the phone flow trips up assistive tech, please open an issue.
+This is accessibility software. **Real-world feedback from screen-reader users
+is the most valuable contribution.** If a decision does not read well, an earcon
+is unclear, a keyboard shortcut is surprising, or the phone flow trips up your
+assistive technology — please open an issue.
 
-Bug reports and PRs welcome. Run `npm test` before submitting.
+Bug reports and pull requests are welcome. Run `npm test` before submitting.
+
+If you find agent-ally useful, consider commenting on
+[Claude Code issue #11002](https://github.com/anthropics/claude-code/issues/11002)
+— the open request for a native `--screen-reader` mode in Claude Code. Linking
+your experience there helps make the case to Anthropic.
+
+---
+
+## Related work
+
+- **[BlindPilot](https://github.com/serrebidev/BlindPilot)** — screen-reader-first
+  desktop frontend for coding agents (native wxPython). Its approach is to bypass
+  permission prompts entirely (YOLO mode). agent-ally takes the opposite approach:
+  make the permission step itself accessible without skipping it.
+- **[Claude Code issue #11002](https://github.com/anthropics/claude-code/issues/11002)**
+  — open request for a native `--screen-reader` flag in Claude Code.
+- **[Screen Reader Programmers in the Vibe Coding Era (arXiv 2506.13270)](https://arxiv.org/abs/2506.13270)**
+  — academic survey of how blind developers adapt to AI coding tools.
+
+---
 
 ## License
 

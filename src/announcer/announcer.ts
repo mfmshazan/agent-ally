@@ -74,25 +74,25 @@ export class Announcer {
   async announce(decision: Decision): Promise<void> {
     const signal = this.begin();
     await this.earcon.play("blocking");
-    await this.speakBody(decision, signal);
-    if (this.verbosity !== "terse") await this.speaker.speak(this.hint(decision), signal);
+    // One speak call = one TTS process, so there are no silent startup gaps
+    // between the intro, options, and hint sentences.
+    const text = this.buildBody(decision) + (this.verbosity !== "terse" ? ` ${this.hint(decision)}` : "");
+    await this.speaker.speak(text, signal);
   }
 
   /** Re-announce on demand (the "R to repeat" affordance). No earcon. */
   async repeat(decision: Decision): Promise<void> {
     const signal = this.begin();
-    await this.speakBody(decision, signal);
-    await this.speaker.speak(this.hint(decision), signal);
+    await this.speaker.speak(`${this.buildBody(decision)} ${this.hint(decision)}`, signal);
   }
 
-  private async speakBody(decision: Decision, signal: AbortSignal): Promise<void> {
-    if (decision.kind === "permission") {
-      const risk = decision.riskLevel === "low" ? "" : ` ${riskPhrase(decision.riskLevel)}`;
-      await this.speaker.speak(`Permission needed. ${decision.title}.${risk}`, signal);
-    } else {
-      await this.speaker.speak(`Claude is asking. ${decision.title}.`, signal);
-    }
-    await this.speakOptionList(decision.options, signal);
+  private buildBody(decision: Decision): string {
+    const intro =
+      decision.kind === "permission"
+        ? `Permission needed. ${decision.title}.${decision.riskLevel === "low" ? "" : ` ${riskPhrase(decision.riskLevel)}`}`
+        : `Claude is asking. ${decision.title}.`;
+    const parts = decision.options.map((o, i) => `${i + 1}, ${o.label}`);
+    return `${intro} Options: ${parts.join(". ")}.`;
   }
 
   private hint(decision: Decision): string {
@@ -102,11 +102,6 @@ export class Announcer {
       return `${base} Press D to hear the full command.`;
     }
     return base;
-  }
-
-  private async speakOptionList(options: DecisionOption[], signal: AbortSignal): Promise<void> {
-    const parts = options.map((o, i) => `${i + 1}, ${o.label}`);
-    await this.speaker.speak(`Options: ${parts.join(". ")}.`, signal);
   }
 
   /** Speak the currently-highlighted option. Called on every navigation move. */

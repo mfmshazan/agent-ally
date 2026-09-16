@@ -1,9 +1,28 @@
 {
   "name": "agent-ally",
-  "version": "0.0.0",
-  "private": true,
-  "description": "Accessibility-first control layer for Claude Code's CLI decision loop",
+  "version": "0.1.0",
+  "description": "Accessibility-first control layer for AI coding agents — driven by speech, keyboard, and your phone",
   "license": "MIT",
+  "author": "mfmshazan",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mfmshazan/agent-ally.git"
+  },
+  "homepage": "https://github.com/mfmshazan/agent-ally#readme",
+  "keywords": [
+    "accessibility",
+    "a11y",
+    "claude",
+    "claude-code",
+    "screen-reader",
+    "ai-agent",
+    "voice",
+    "blind",
+    "tts"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
   "type": "module",
   "bin": {
     "agent-ally": "dist/cli.js"
