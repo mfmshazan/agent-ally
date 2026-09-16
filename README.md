@@ -143,6 +143,7 @@ agent-ally --no-phone               # interactive, no phone surface (voice + key
 agent-ally --profile phone          # phone is everything — no terminal input needed
 agent-ally --profile phone --voice  # phone-driven, but also speak decisions aloud
 agent-ally --silent                 # no audio; prints [SPEAK] lines instead (useful for CI/debug)
+agent-ally --https                  # serve the phone over HTTPS so its mic (voice input) works
 agent-ally --port 5000              # use a custom port for the phone server (default: random)
 ```
 
@@ -194,11 +195,35 @@ you get a web page where you can:
 - **Attach files or photos** — tap the 📎 button to pick files from your phone.
   They are saved into the project folder so Claude can read images and edit files
   directly.
+- **Hear replies aloud** — tap 🔊 in the header to have decisions and the agent's
+  replies spoken on the phone (uses the phone's built-in voice).
 
 ```bash
 agent-ally                # phone on (default) — QR printed on every launch
 agent-ally --no-phone     # opt out for a pure laptop/voice session
 ```
+
+### Talk to it from your phone (voice input)
+
+To **speak** your prompts on the phone (not just type), the page must be served
+over HTTPS — browsers only allow microphone access on a secure connection. Add
+the `--https` flag:
+
+```bash
+agent-ally --https        # serve the phone over HTTPS so its mic works
+```
+
+Then, on the phone:
+
+1. Scan the QR — it now points to `https://…`.
+2. Chrome shows a one-time **"Your connection is not private"** warning (the
+   certificate is self-signed). Tap **Advanced → Proceed** to accept it. This
+   happens once per phone.
+3. A 🎤 mic button appears in the message bar. Tap it, speak, and it transcribes
+   and sends automatically.
+
+Without `--https`, the phone still types, taps approvals, uploads files, and can
+speak replies (🔊) — only the voice **input** (mic) needs the secure connection.
 
 > ⚠️ The phone link lets any device on your local network approve the agent's
 > actions. Use it only on a trusted network (home, personal hotspot).

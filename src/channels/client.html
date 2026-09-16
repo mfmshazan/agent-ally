@@ -169,9 +169,15 @@
       const micBtn = document.getElementById("mic");
       const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
 
-      if (!SR) {
-        micBtn.disabled = true;
-        micBtn.title = "Voice input not supported in this browser";
+      // Chrome only allows the mic (SpeechRecognition) on a secure origin —
+      // HTTPS or localhost. Over plain http:// (the default) it can't work, so we
+      // hide the mic entirely and just show the send button. Run with --https to
+      // get a secure origin and the mic appears.
+      const micAvailable = !!SR && window.isSecureContext;
+
+      if (!micAvailable) {
+        micBtn.style.display = "none";
+        sendEl.style.display = "flex"; // no mic to swap with — always show send
       } else {
         const recognition = new SR();
         recognition.continuous = false;
@@ -193,9 +199,14 @@
           if (promptEl.value.trim()) composerEl.requestSubmit();
         };
 
-        recognition.onerror = () => {
+        recognition.onerror = (e) => {
           listening = false;
           micBtn.classList.remove("listening");
+          if (e.error === "not-allowed" || e.error === "service-not-allowed") {
+            statusEl.textContent = "Microphone permission was blocked — allow it in your browser settings.";
+          } else if (e.error === "no-speech") {
+            statusEl.textContent = "Didn't catch that — tap the mic and try again.";
+          }
         };
 
         micBtn.addEventListener("click", () => {
@@ -204,10 +215,14 @@
           } else {
             promptEl.value = "";
             autoGrow();
-            recognition.start();
-            listening = true;
-            micBtn.classList.add("listening");
-            micBtn.setAttribute("aria-label", "Stop listening");
+            try {
+              recognition.start();
+              listening = true;
+              micBtn.classList.add("listening");
+              micBtn.setAttribute("aria-label", "Stop listening");
+            } catch {
+              statusEl.textContent = "Couldn't start the microphone — try again.";
+            }
           }
         });
       }
@@ -254,7 +269,8 @@
       let ws;
 
       function connect() {
-        ws = new WebSocket(`ws://${location.host}/?token=${token}`);
+        const wsScheme = location.protocol === "https:" ? "wss:" : "ws:";
+        ws = new WebSocket(`${wsScheme}//${location.host}/?token=${token}`);
         ws.onopen = () => (statusEl.textContent = "Connected.");
         ws.onclose = () => {
           statusEl.textContent = "Disconnected. Reconnecting…";
@@ -392,7 +408,9 @@
       function autoGrow() {
         promptEl.style.height = "auto";
         promptEl.style.height = Math.min(promptEl.scrollHeight, 128) + "px";
-        // WhatsApp pattern: show mic when empty, send arrow when typing
+        // WhatsApp pattern: mic when empty, send arrow when typing. Only when the
+        // mic is available (--https); otherwise send stays shown at all times.
+        if (!micAvailable) return;
         const hasText = promptEl.value.trim().length > 0;
         micBtn.style.display = hasText ? "none" : "flex";
         sendEl.style.display = hasText ? "flex" : "none";

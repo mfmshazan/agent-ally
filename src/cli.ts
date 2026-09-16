@@ -22,6 +22,7 @@
  *   agent-ally --list                      # list this project's past sessions, then exit
  *   agent-ally --resume 2                  # reopen session #2 from --list (or by id)
  *   agent-ally --history                   # print the current chat's transcript, then exit
+ *   agent-ally --https                     # serve the phone over HTTPS so its mic works
  *   agent-ally --port 5000                 # custom phone port
  *
  * Each project keeps multiple chats (like an IDE's conversation list). Relaunching
@@ -59,6 +60,7 @@ interface Args {
   resume?: string;
   history: boolean;
   port?: number;
+  https: boolean;
   prompt: string;
 }
 
@@ -73,6 +75,7 @@ function parseArgs(argv: string[]): Args {
   let resume: string | undefined;
   let history = false;
   let port: number | undefined;
+  let https = false;
   const rest: string[] = [];
   for (let i = 0; i < argv.length; i += 1) {
     const a = argv[i];
@@ -85,6 +88,7 @@ function parseArgs(argv: string[]): Args {
     else if (a === "--resume") resume = argv[(i += 1)];
     else if (a === "--history") history = true;
     else if (a === "--port") port = Number(argv[(i += 1)]);
+    else if (a === "--https") https = true;
     else if (a === "--profile") {
       const name = argv[(i += 1)];
       if (!name || !isProfileName(name)) {
@@ -94,7 +98,7 @@ function parseArgs(argv: string[]): Args {
       profile = name;
     } else rest.push(a);
   }
-  return { profile, silent, phone, noPhone, voice, newChat, list, resume, history, port, prompt: rest.join(" ").trim() };
+  return { profile, silent, phone, noPhone, voice, newChat, list, resume, history, port, https, prompt: rest.join(" ").trim() };
 }
 
 interface LineReader {
@@ -469,6 +473,7 @@ async function main(): Promise<void> {
       port: args.port,
       acceptsPrompts: surfaces.phonePrompts,
       store: historyStore,
+      https: args.https,
     });
     await phoneChannel.start();
     console.log(`\n📱 Phone control ready — open this on your phone (same Wi-Fi):\n   ${phoneChannel.url}\n`);
@@ -477,6 +482,12 @@ async function main(): Promise<void> {
       qrcode.generate(phoneChannel.url, { small: true });
     } catch {
       /* QR is optional */
+    }
+    if (args.https) {
+      console.log("🎤 Voice input on: your phone will show a one-time \"not private\" warning —");
+      console.log("   tap Advanced → Proceed to accept the self-signed certificate, then the mic works.");
+    } else {
+      console.log("💡 Want to talk to it from your phone? Restart with  --https  to enable the mic.");
     }
     console.log("⚠️  Anyone with this link can drive the agent — use on a trusted network only.\n");
     if (surfaces.voice) await announcer.say("Phone control ready. Scan the code to connect.");

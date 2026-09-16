@@ -9,11 +9,16 @@
  */
 
 import http from "node:http";
+import https from "node:https";
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 import { fileURLToPath } from "node:url";
+import { createRequire } from "node:module";
 import { basename, dirname, extname, join, relative, sep } from "node:path";
 import { networkInterfaces } from "node:os";
+
+// selfsigned is CommonJS with no type declarations; load it via createRequire.
+const nodeRequire = createRequire(import.meta.url);
 import { WebSocketServer, type WebSocket } from "ws";
 import type { Decision, DecisionOption } from "../types.js";
 import type { DecisionChannel } from "./types.js";
@@ -26,6 +31,8 @@ export interface PhoneChannelOptions {
   acceptsPrompts?: boolean;
   /** Persist the transcript across sessions (per project). */
   store?: HistoryStore;
+  /** Serve over HTTPS (self-signed) so the phone browser can use the mic. */
+  https?: boolean;
 }
 
 interface Pending {
@@ -72,8 +79,9 @@ export class PhoneChannel implements DecisionChannel {
   readonly token: string;
   readonly port: number;
   readonly acceptsPrompts: boolean;
+  readonly secure: boolean;
 
-  private server?: http.Server;
+  private server?: http.Server | https.Server;
   private wss?: WebSocketServer;
   private readonly clients = new Set<WebSocket>();
   private pending: Pending | null = null;
@@ -94,6 +102,7 @@ export class PhoneChannel implements DecisionChannel {
     this.token = opts.token ?? randomBytes(8).toString("hex");
     this.port = opts.port ?? 4177;
     this.acceptsPrompts = opts.acceptsPrompts ?? false;
+    this.secure = opts.https ?? false;
     this.store = opts.store;
     // Seed the in-memory thread from disk so past sessions show up.
     this.history = this.store?.load() ?? [];
@@ -193,19 +202,43 @@ export class PhoneChannel implements DecisionChannel {
 
   /** URL to open on the phone (same Wi-Fi). */
   get url(): string {
-    return `http://${firstLanAddress()}:${this.port}/?token=${this.token}`;
+    const scheme = this.secure ? "https" : "http";
+    return `${scheme}://${firstLanAddress()}:${this.port}/?token=${this.token}`;
+  }
+
+  /**
+   * A fresh in-memory self-signed certificate for this run. It's only meant to
+   * flip the browser into a "secure context" so the mic works on the LAN — the
+   * phone still shows a one-time "not private" warning to accept. Nothing is
+   * written to disk.
+   */
+  private async selfSignedCert(): Promise<{ key: string; cert: string }> {
+    const selfsigned = nodeRequire("selfsigned") as {
+      generate: (attrs: unknown, opts: unknown) => Promise<{ private: string; cert: string }>;
+    };
+    const pems = await selfsigned.generate([{ name: "commonName", value: firstLanAddress() }], {
+      days: 365,
+      keySize: 2048,
+      algorithm: "sha256",
+    });
+    return { key: pems.private, cert: pems.cert };
   }
 
   /** Start listening. Resolves once the server is up. */
-  start(): Promise<void> {
-    const server = http.createServer((req, res) => {
+  async start(): Promise<void> {
+    const handler = (req: http.IncomingMessage, res: http.ServerResponse): void => {
       const u = new URL(req.url ?? "/", `http://localhost`);
       if (u.searchParams.get("token") !== this.token) {
         res.writeHead(401).end("unauthorized");
         return;
       }
       res.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" }).end(this.html);
-    });
+    };
+    // HTTPS (self-signed) lets the phone browser use the microphone, which Chrome
+    // only permits on a secure origin. Plain HTTP stays the clean default.
+    const server = this.secure
+      ? https.createServer(await this.selfSignedCert(), handler)
+      : http.createServer(handler);
 
     const wss = new WebSocketServer({ noServer: true });
     server.on("upgrade", (req, socket, head) => {
@@ -232,7 +265,7 @@ export class PhoneChannel implements DecisionChannel {
 
     this.server = server;
     this.wss = wss;
-    return new Promise((resolve) => server.listen(this.port, resolve));
+    await new Promise<void>((resolve) => server.listen(this.port, () => resolve()));
   }
 
   private broadcast(msg: unknown): void {
