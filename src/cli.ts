@@ -192,6 +192,35 @@ const HISTORY_COMMANDS = new Set(["history", "/history", "--history", "agent-all
 const CHATS_COMMANDS = new Set(["chats", "/chats", "--list", "agent-ally --list"]);
 
 /**
+ * The most common first-run failure is Claude Code not being logged in — the SDK
+ * surfaces that as a cryptic "process exited" / auth error. Detect those and, in
+ * either case, tell the user exactly how to log in rather than leaving them with
+ * a raw stack message.
+ */
+function looksLikeAuthError(message: string): boolean {
+  return /exited with code|not logged in|unauthorized|authentication|credential|api key|401|403|forbidden|invalid api key/i.test(
+    message,
+  );
+}
+
+/** A friendly, actionable message for when the agent can't run. */
+function explainAdapterError(message: string): string {
+  if (looksLikeAuthError(message)) {
+    return [
+      "⚠️  Couldn't reach Claude — it looks like Claude Code isn't logged in on this machine.",
+      "",
+      "   To fix it:",
+      "     1. Run:  claude",
+      "     2. Complete the login in your browser when prompted.",
+      "     3. Then run  agent-ally  again.",
+      "",
+      `   (Details: ${message})`,
+    ].join("\n");
+  }
+  return `Claude failed: ${message}`;
+}
+
+/**
  * One interactive loop that serves every profile. Each turn it takes the next
  * prompt from whichever surface acts first — a line typed at the terminal or a
  * prompt sent from the phone — then runs it to completion (so decisions during
@@ -312,8 +341,13 @@ async function runInteractive(opts: InteractiveOptions): Promise<void> {
         if (chatStore && chatId) chatStore.touch(chatId);
       } catch (err) {
         const message = (err as Error).message;
-        console.error(`\n${adapter.name} failed:`, message);
-        phoneChannel?.log("system", `Error: ${message}`);
+        console.error(`\n${explainAdapterError(message)}`);
+        phoneChannel?.log(
+          "system",
+          looksLikeAuthError(message)
+            ? "⚠️ Claude isn't logged in. On the computer, run  claude  to log in, then try again."
+            : `Error: ${message}`,
+        );
       }
       phoneChannel?.status("Ready — send a prompt.", false);
     }
@@ -564,7 +598,7 @@ async function main(): Promise<void> {
       });
     }
   } catch (err) {
-    console.error(`\n${adapter.name} failed:`, (err as Error).message);
+    console.error(`\n${explainAdapterError((err as Error).message)}`);
     process.exitCode = 1;
   } finally {
     await phoneChannel?.close();
