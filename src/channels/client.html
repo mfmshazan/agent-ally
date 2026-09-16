@@ -67,12 +67,14 @@
       .icon-btn { flex: 0 0 auto; margin: 0; padding: 0; width: auto; display: flex; align-items: center; justify-content: center; border-radius: 999px; line-height: 1; }
       #attach { width: 2.2rem; height: 2.2rem; background: transparent; color: #8fa6c9; font-size: 1.25rem; }
       #attach:active { color: #2b6ef2; }
-      #mic { width: 2.2rem; height: 2.2rem; background: transparent; color: #8fa6c9; font-size: 1.25rem; }
-      #mic.listening { color: #ff4d4f; animation: pulse 1s ease-in-out infinite; }
+      /* Mic and send share the same slot — mic shows when empty, send when typing */
+      #mic, #send { width: 2.4rem; height: 2.4rem; background: #2f6f3e; color: #fff; border-radius: 999px; display: flex; align-items: center; justify-content: center; transition: background 0.15s; }
+      #mic { font-size: 1rem; }
+      #mic.listening { background: #ff4d4f; animation: pulse 1s ease-in-out infinite; }
       #mic:disabled { opacity: 0.3; }
-      @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
-      #send { width: 2.3rem; height: 2.3rem; background: #2f6f3e; color: #fff; font-size: 1.15rem; }
+      #send { font-size: 1.15rem; display: none; }
       #send:disabled { opacity: 0.4; }
+      @keyframes pulse { 0%,100% { transform: scale(1); } 50% { transform: scale(0.88); } }
       #attachments { display: flex; flex-wrap: wrap; gap: 0.4rem; margin: 0.2rem 0; }
       #attachments:empty { display: none; }
       .chip { display: inline-flex; align-items: center; gap: 0.35rem; background: #23324d; padding: 0.3rem 0.55rem; border-radius: 999px; font-size: 0.82rem; max-width: 100%; }
@@ -97,7 +99,12 @@
       <div class="input-bar">
         <button type="button" id="attach" class="icon-btn" aria-label="Attach files" title="Attach">📎</button>
         <textarea id="prompt" rows="1" placeholder="Message…"></textarea>
-        <button type="button" id="mic" class="icon-btn" aria-label="Speak prompt" title="Speak">🎤</button>
+        <button type="button" id="mic" class="icon-btn" aria-label="Speak prompt" title="Speak">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true">
+            <rect x="9" y="2" width="6" height="12" rx="3"/>
+            <path d="M5 11a7 7 0 0 0 14 0h-2a5 5 0 0 1-10 0H5zm7 9v-2m-3 2h6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" fill="none"/>
+          </svg>
+        </button>
         <button type="submit" id="send" class="icon-btn" aria-label="Send" title="Send">➤</button>
       </div>
     </form>
@@ -175,7 +182,7 @@
         recognition.onresult = (e) => {
           const transcript = Array.from(e.results).map((r) => r[0].transcript).join("");
           promptEl.value = transcript;
-          autoGrow();
+          autoGrow(); // also triggers mic↔send swap
         };
 
         recognition.onend = () => {
@@ -385,6 +392,10 @@
       function autoGrow() {
         promptEl.style.height = "auto";
         promptEl.style.height = Math.min(promptEl.scrollHeight, 128) + "px";
+        // WhatsApp pattern: show mic when empty, send arrow when typing
+        const hasText = promptEl.value.trim().length > 0;
+        micBtn.style.display = hasText ? "none" : "flex";
+        sendEl.style.display = hasText ? "flex" : "none";
       }
       promptEl.addEventListener("input", autoGrow);
       // Enter sends; Shift+Enter makes a newline.
