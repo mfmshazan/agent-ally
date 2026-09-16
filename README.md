@@ -4,78 +4,79 @@
 [![npm downloads](https://img.shields.io/npm/dm/agent-ally)](https://www.npmjs.com/package/agent-ally)
 [![license](https://img.shields.io/npm/l/agent-ally)](LICENSE)
 
-**An accessibility-first control layer for AI coding agents — driven by speech,
-keyboard, and your phone.**
+**An accessibility-first control layer for AI coding agents.** Every decision is
+read aloud and keyboard-navigable, and the whole thing is drivable from your
+phone, so anyone can use it.
 
 The name is a pun: **a11y** (accessibility) + **ally** (a helper on your side).
 
----
+## Who it's for
+
+- **Blind and low-vision developers.** This is the core. agent-ally makes the
+  AI's permission and decision prompts fully usable without sight: spoken aloud,
+  navigated by keyboard, and confirmed before anything runs.
+- **Anyone who wants to drive the agent from their phone.** Approve actions, send
+  prompts (by typing or voice), and share screenshots over your Wi-Fi, without
+  sitting at the keyboard.
 
 ## The problem
 
-AI coding agents (like Claude Code) pause mid-task to ask the developer for
-permission — *"Can I run this command?"*, *"Which option do you want?"*. In the
-terminal those decisions use arrow-key widgets and streaming output that **screen
-readers handle poorly**. They are also the **highest-stakes moments** in the
+AI coding agents like Claude Code pause mid-task to ask the developer for
+permission, such as *"Can I run this command?"* or *"Which option do you want?"*.
+In the terminal those prompts use arrow-key widgets and streaming output that
+screen readers handle poorly. They are also the highest-stakes moments in the
 whole session: approving a shell command, allowing a file write, choosing between
 options. Skipping or guessing them is not safe.
 
-agent-ally solves this by wrapping the agent's decision loop in a fully
-accessible experience — every decision is **announced**, **navigated by
-keyboard**, and **confirmed aloud** before anything commits. You can also approve
-decisions from your **phone over Wi-Fi**, so you are never tied to the terminal.
-
----
+agent-ally wraps the agent's decision loop in a fully accessible experience.
+Every decision is announced, navigated by keyboard, and confirmed aloud before
+anything commits. You can also approve decisions from your phone over Wi-Fi, so
+you are never tied to the terminal.
 
 ## Demo
 
 https://github.com/user-attachments/assets/82c9d17d-67ac-467d-8b08-21d61fe1774f
 
----
-
 ## What it does
 
 | Feature | Description |
 |---------|-------------|
-| 🔊 **Spoken decisions** | Every permission prompt and multiple-choice question is read aloud the instant it appears — earcon, then full text, then your options as a numbered list. |
-| 🔢 **Keyboard navigation** | Arrow keys / number keys move between options; each move is spoken. Enter commits (high-risk needs a second Enter). `R` replays the whole decision. `D` reads the full shell command. |
+| 🔊 **Spoken decisions** | Every permission prompt and multiple-choice question is read aloud the instant it appears: earcon, then full text, then your options as a numbered list. |
+| 🔢 **Keyboard navigation** | Arrow keys or number keys move between options, and each move is spoken. Enter commits (high-risk needs a second Enter). `R` replays the whole decision. `D` reads the full shell command. |
 | ✅ **Spoken confirmation** | The committed choice is spoken aloud before the agent continues. High-risk actions require an explicit second press. |
-| 📱 **Phone control** | Scan a QR code at launch, then send prompts and approve decisions from a web page on your phone — over your local Wi-Fi network. No app to install. |
-| 📎 **File & photo uploads** | Tap the attach button on the phone page to send screenshots or files. They are saved into your project so Claude can view images and read or edit files with its normal tools. |
-| 💬 **Multiple chats** | Each project keeps a conversation list like an IDE agent panel. Relaunch and continue any past chat; start a new thread whenever you want. |
+| 📱 **Phone control** | Scan a QR code at launch, then send prompts and approve decisions from a web page on your phone over your local Wi-Fi network. No app to install. |
+| 🎤 **Phone voice** | The phone can read decisions and replies aloud (tap 🔊), and with `--https` it lets you speak your prompts instead of typing them. You can also use it silently with text and taps. |
+| 📎 **File and photo uploads** | Tap the attach button on the phone page to send screenshots or files. They are saved into your project so Claude can view images and read or edit files with its normal tools. |
+| 💬 **Multiple chats** | Each project keeps a conversation list like an IDE agent panel. Relaunch and continue any past chat, or start a new thread whenever you want. |
 | 🗂️ **Cross-device history** | The transcript replays on the phone (grouped by day with timestamps) and prints to the terminal with `--history`. Move between phone and laptop without losing the thread. |
-| 🔁 **Session resume** | Reopening a chat resumes the same Claude session — yesterday's plan is still in context, not just in the transcript. |
-
----
+| 🔁 **Session resume** | Reopening a chat resumes the same Claude session, so yesterday's plan is still in context, not just in the transcript. |
 
 ## How it works
 
 ```
-You  ──► agent-ally ──► Claude Code (AI agent)
-              │                │
-         speaks &         pauses on
-         navigates        every decision
-         decisions   ◄────────┘
+You  ──►  agent-ally  ──►  Claude Code (AI agent)
+              │                  │
+         speaks &          pauses on
+         navigates         every decision
+         decisions   ◄─────────┘
               │
-         Phone (Wi-Fi) ◄──► same decisions, from anywhere
+         Phone (Wi-Fi)  ◄──►  same decisions, from anywhere
 ```
 
-agent-ally sits between you and the AI agent. When the agent needs a decision
-it calls agent-ally, which announces it on all your active surfaces (terminal
-voice + phone) and waits for your answer. The first surface to receive an answer
-wins; the others are silenced.
+agent-ally sits between you and the AI agent. When the agent needs a decision it
+calls agent-ally, which announces it on all your active surfaces (terminal voice
+plus phone) and waits for your answer. The first surface to answer wins, and the
+others are silenced.
 
-The **Claude Code adapter** (via the Claude Agent SDK's `canUseTool` hook) is
-the flagship integration. The engine itself is agent-agnostic — other agents can
+The Claude Code adapter (via the Claude Agent SDK's `canUseTool` hook) is the
+flagship integration. The engine itself is agent-agnostic, so other agents can
 plug in through the same adapter interface.
-
----
 
 ## Setup (new machine)
 
 Follow these steps once on any machine where you want to use agent-ally.
 
-### Step 1 — Install Node.js 18+
+### Step 1: Install Node.js 18+
 
 Download from [nodejs.org](https://nodejs.org) and install. Verify:
 
@@ -83,31 +84,31 @@ Download from [nodejs.org](https://nodejs.org) and install. Verify:
 node --version   # should print v18.x or higher
 ```
 
-### Step 2 — Install and authenticate Claude Code
+### Step 2: Install and authenticate Claude Code
 
-agent-ally drives Claude through the Claude Agent SDK, so **Claude Code must be
-installed and signed in with your own Anthropic account** on that machine.
+agent-ally drives Claude through the Claude Agent SDK, so Claude Code must be
+installed and signed in with your own Anthropic account on that machine.
 
 ```bash
 npm install -g @anthropic-ai/claude-code
-claude          # follow the login prompt to authenticate
+claude            # follow the login prompt to authenticate
 claude --version  # verify it works
 ```
 
 > Claude Code requires an [Anthropic account](https://claude.ai) with an active
-> subscription or API access. agent-ally reuses that auth — there is no
+> subscription or API access. agent-ally reuses that auth, so there is no
 > separate API key to configure.
 
-### Step 3 — Install agent-ally
+### Step 3: Install agent-ally
 
 ```bash
 npm install -g agent-ally
 ```
 
 That's it. The `agent-ally` command is now available globally in every terminal
-session on that machine. No cloning, no building — npm handles everything.
+session on that machine. No cloning, no building, npm handles everything.
 
-### Step 4 — Use it in any project
+### Step 4: Use it in any project
 
 ```bash
 cd ~/my-project           # go to YOUR project (any folder on your machine)
@@ -115,22 +116,18 @@ agent-ally                # start an interactive session with phone QR
 agent-ally "add a README" # or run a single prompt and exit
 ```
 
-agent-ally runs Claude inside **your** project's directory. It reads and writes
-your files, never the agent-ally folder itself.
-
----
+agent-ally runs Claude inside your project's directory. It reads and writes your
+files, never the agent-ally folder itself.
 
 ## Quick start (if already set up)
 
 ```bash
 cd ~/my-project
 
-agent-ally                # interactive session — phone QR printed automatically
+agent-ally                # interactive session, phone QR printed automatically
 agent-ally "your prompt"  # one-shot prompt, then exit
-agent-ally --no-phone     # voice + keyboard only, no QR
+agent-ally --no-phone     # voice and keyboard only, no QR
 ```
-
----
 
 ## All commands
 
@@ -139,8 +136,8 @@ agent-ally --no-phone     # voice + keyboard only, no QR
 ```bash
 agent-ally                          # interactive session, phone QR printed by default
 agent-ally "your prompt here"       # one-shot: run a single prompt and exit
-agent-ally --no-phone               # interactive, no phone surface (voice + keyboard only)
-agent-ally --profile phone          # phone is everything — no terminal input needed
+agent-ally --no-phone               # interactive, no phone surface (voice and keyboard only)
+agent-ally --profile phone          # phone is everything, no terminal input needed
 agent-ally --profile phone --voice  # phone-driven, but also speak decisions aloud
 agent-ally --silent                 # no audio; prints [SPEAK] lines instead (useful for CI/debug)
 agent-ally --https                  # serve the phone over HTTPS so its mic (voice input) works
@@ -149,9 +146,9 @@ agent-ally --port 5000              # use a custom port for the phone server (de
 
 ### Managing chats
 
-Each project keeps **multiple independent chats** — like the conversation list
-in VS Code's Copilot or Cursor. Every chat has its own Claude session and its
-own transcript.
+Each project keeps multiple independent chats, like the conversation list in VS
+Code's Copilot or Cursor. Every chat has its own Claude session and its own
+transcript.
 
 ```bash
 agent-ally                  # reopen and continue the last-used chat for this project
@@ -165,7 +162,7 @@ agent-ally --resume <id>    # reopen a chat by its full id
 
 ```
 chats              # print the chat list for this project
-switch 2           # jump to chat number 2 live — no need to exit and relaunch
+switch 2           # jump to chat number 2 live, no need to exit and relaunch
 switch <id>        # jump by full chat id
 history            # print this chat's full transcript inline
 exit               # end the session (also: quit, or Ctrl+D, or Ctrl+C)
@@ -179,35 +176,33 @@ agent-ally --history        # print the current chat's full transcript, then exi
 
 On the phone the full conversation replays automatically when you connect,
 grouped by day (Today / Yesterday / date) with a timestamp on each message.
-Scroll up to review what was planned before sending the next prompt.
-
----
+Scroll back to review what was planned before sending the next prompt.
 
 ## Phone control
 
-Phone control is **on by default**. Every time you launch agent-ally a QR code
-is printed in the terminal. Scan it with your phone (same Wi-Fi network) and
-you get a web page where you can:
+Phone control is on by default. Every time you launch agent-ally a QR code is
+printed in the terminal. Scan it with your phone (same Wi-Fi network) and you get
+a web page where you can:
 
-- **Send prompts** — type what you want the agent to do and tap Send.
-- **Approve or deny** — every permission request appears on the phone at the
-  same time as the terminal announcement; tap to answer from either surface.
-- **Attach files or photos** — tap the 📎 button to pick files from your phone.
+- **Send prompts.** Type what you want the agent to do and tap Send.
+- **Approve or deny.** Every permission request appears on the phone at the same
+  time as the terminal announcement. Tap to answer from either surface.
+- **Attach files or photos.** Tap the 📎 button to pick files from your phone.
   They are saved into the project folder so Claude can read images and edit files
   directly.
-- **Hear replies aloud** — tap 🔊 in the header to have decisions and the agent's
-  replies spoken on the phone (uses the phone's built-in voice).
+- **Hear replies aloud.** Tap 🔊 in the header to have decisions and the agent's
+  replies spoken on the phone, using the phone's built-in voice.
 
 ```bash
-agent-ally                # phone on (default) — QR printed on every launch
+agent-ally                # phone on (default), QR printed on every launch
 agent-ally --no-phone     # opt out for a pure laptop/voice session
 ```
 
 ### Talk to it from your phone (voice input)
 
-To **speak** your prompts on the phone (not just type), the page must be served
-over HTTPS — browsers only allow microphone access on a secure connection. Add
-the `--https` flag:
+To speak your prompts on the phone instead of typing, the page must be served
+over HTTPS, because browsers only allow microphone access on a secure
+connection. Add the `--https` flag:
 
 ```bash
 agent-ally --https        # serve the phone over HTTPS so its mic works
@@ -215,20 +210,19 @@ agent-ally --https        # serve the phone over HTTPS so its mic works
 
 Then, on the phone:
 
-1. Scan the QR — it now points to `https://…`.
-2. Chrome shows a one-time **"Your connection is not private"** warning (the
-   certificate is self-signed). Tap **Advanced → Proceed** to accept it. This
-   happens once per phone.
+1. Scan the QR. It now points to `https://...`.
+2. Chrome shows a one-time "Your connection is not private" warning, because the
+   certificate is self-signed. Tap **Advanced** then **Proceed** to accept it.
+   This happens once per phone.
 3. A 🎤 mic button appears in the message bar. Tap it, speak, and it transcribes
    and sends automatically.
 
 Without `--https`, the phone still types, taps approvals, uploads files, and can
-speak replies (🔊) — only the voice **input** (mic) needs the secure connection.
+speak replies (🔊). Only the voice input (mic) needs the secure connection.
 
 > ⚠️ The phone link lets any device on your local network approve the agent's
-> actions. Use it only on a trusted network (home, personal hotspot).
-
----
+> actions. Use it only on a trusted network such as home Wi-Fi or a personal
+> hotspot.
 
 ## Profiles
 
@@ -236,20 +230,18 @@ Different users need different surfaces. A profile sets the defaults:
 
 | Profile | Best for | Speech | Keyboard | Phone |
 |---------|----------|:------:|:--------:|:-----:|
-| `voice` *(default)* | Blind / low-vision dev at the laptop | ✅ | ✅ | QR by default |
-| `full` | Voice at the laptop **and** full phone answers | ✅ | ✅ | ✅ |
-| `phone` | Laptop unattended — phone drives everything | — | — | ✅ |
+| `voice` *(default)* | Blind or low-vision dev at the laptop | ✅ | ✅ | QR by default |
+| `full` | Voice at the laptop plus full phone answers | ✅ | ✅ | ✅ |
+| `phone` | Laptop unattended, phone drives everything | ➖ | ➖ | ✅ |
 
 ```bash
-agent-ally                          # voice profile (speech + keyboard + phone QR)
+agent-ally                          # voice profile (speech, keyboard, phone QR)
 agent-ally --no-phone               # voice profile, no phone
-agent-ally --profile full           # voice + full phone prompts and answers
-agent-ally --profile phone          # phone-only — no terminal input
+agent-ally --profile full           # voice plus full phone prompts and answers
+agent-ally --profile phone          # phone-only, no terminal input
 agent-ally --profile phone --voice  # phone-only, but also speak decisions aloud
 agent-ally --profile voice --silent # keyboard only, no audio
 ```
-
----
 
 ## Keyboard shortcuts (during a decision)
 
@@ -259,37 +251,33 @@ question prompt:
 | Key | Action |
 |-----|--------|
 | `↑` / `↓` or `k` / `j` | Move between options (each spoken immediately) |
-| `1` – `9` | Jump directly to that option (1-based) |
-| `R` | Repeat the full decision — earcon + text + options + hint |
+| `1` to `9` | Jump directly to that option (1-based) |
+| `R` | Repeat the full decision (earcon, text, options, hint) |
 | `D` | Read the full shell command (permission prompts only) |
 | `Enter` | Commit the highlighted option |
 | `Enter` *(second press)* | Confirm a high-risk action after the first press |
-| `Ctrl+C` | Cancel — safely denies the current decision |
-
----
+| `Ctrl+C` | Cancel, which safely denies the current decision |
 
 ## How decisions are announced
 
 When the AI agent needs a decision, this is what you hear:
 
-1. **Earcon** — two tones that signal "the agent is blocked on you".
-2. **Intro** — `"Permission needed. <what the agent wants to do>. <risk level>."`
+1. **Earcon.** Two tones that signal the agent is blocked on you.
+2. **Intro.** `"Permission needed. <what the agent wants to do>. <risk level>."`
    or `"Claude is asking. <question>."` for multiple-choice questions.
-3. **Options** — `"Options: 1, Allow. 2, Deny. 3, Allow all edits."` (all in
-   one breath — no gaps between items).
-4. **Hint** — `"Use the arrow keys or number keys to choose, then press enter.
+3. **Options.** `"Options: 1, Allow. 2, Deny. 3, Allow all edits."` (all in one
+   breath, no gaps between items).
+4. **Hint.** `"Use the arrow keys or number keys to choose, then press enter.
    Press R to repeat. Press D to hear the full command."`
-5. **Selection** — as soon as you move, the new option is spoken:
+5. **Selection.** As soon as you move, the new option is spoken:
    `"2 of 3, Deny."`
-6. **Confirmation** — when you commit: `"Allow selected."` High-risk choices ask
+6. **Confirmation.** When you commit: `"Allow selected."` High-risk choices ask
    `"Confirm Allow? Press enter again to confirm."` before committing.
 
----
+## Data and privacy
 
-## Data & privacy
-
-- **Transcripts** are stored locally under `~/.agent-ally/projects/` — one
-  folder per project, one file per chat. Nothing is sent to a remote server by
+- **Transcripts** are stored locally under `~/.agent-ally/projects/`, one folder
+  per project and one file per chat. Nothing is sent to a remote server by
   agent-ally itself.
 - **Claude's API calls** go through the Claude Agent SDK and Anthropic's servers,
   exactly as they would with Claude Code directly. agent-ally adds no additional
@@ -297,11 +285,9 @@ When the AI agent needs a decision, this is what you hear:
 - **The phone server** is local-only (LAN). The access token is generated fresh
   each launch and is only valid on your local network.
 
----
-
 ## Troubleshooting
 
-**"Couldn't reach Claude — it looks like Claude Code isn't logged in"**
+**"Couldn't reach Claude, it looks like Claude Code isn't logged in"**
 agent-ally reuses Claude Code's login. If you see this after sending a prompt,
 Claude Code isn't authenticated on this machine. Fix it:
 
@@ -309,31 +295,29 @@ Claude Code isn't authenticated on this machine. Fix it:
 claude          # complete the login in your browser when prompted
 ```
 
-Then run `agent-ally` again. (See [Setup → Step 2](#step-2--install-and-authenticate-claude-code).)
+Then run `agent-ally` again. (See [Setup Step 2](#step-2-install-and-authenticate-claude-code).)
 
 **The phone page looks out of date after an update**
-Your phone browser cached the old page. Open it in a fresh/incognito tab, or
+Your phone browser cached the old page. Open it in a fresh or incognito tab, or
 clear the site data. From v0.1.2 on, the server sends `Cache-Control: no-store`
 so this shouldn't recur.
 
 **The 🎤 mic button doesn't appear on the phone**
 Voice input needs a secure connection. Start with `agent-ally --https` and accept
-the one-time certificate warning on the phone — see
+the one-time certificate warning on the phone. See
 [Talk to it from your phone](#talk-to-it-from-your-phone-voice-input).
 
 **The phone can't connect at all**
-Make sure the phone is on the **same Wi-Fi network** as the computer, and that a
-firewall isn't blocking the port. Some "guest" networks isolate devices from each
-other — use a normal network or a personal hotspot.
-
----
+Make sure the phone is on the same Wi-Fi network as the computer, and that a
+firewall isn't blocking the port. Some guest networks isolate devices from each
+other, so use a normal network or a personal hotspot.
 
 ## Project structure
 
 ```
 src/
   adapters/      # Agent adapters (claude.ts is the flagship)
-  announcer/     # Text-to-speech + earcons (tts.ts, announcer.ts, earcons.ts)
+  announcer/     # Text-to-speech and earcons (tts.ts, announcer.ts, earcons.ts)
   channels/      # Decision surfaces (terminal.ts, phone.ts, client.html)
   config/        # Profiles and surface resolution (profile.ts)
   history/       # Transcript, session, multi-chat store, Claude session reader
@@ -342,42 +326,37 @@ src/
   policy/        # Risk classification (risk.ts)
   coordinator.ts # Races channels; first answer wins
   permissionHandler.ts  # canUseTool wiring
-  cli.ts         # Entry point — argument parsing, surface setup, interactive loop
+  cli.ts         # Entry point: argument parsing, surface setup, interactive loop
 test/            # Node assert tests (no tokens; fixture-driven)
 docs/
   FINDINGS.md    # Spike notes: how canUseTool interception was validated
 ```
 
----
+## Contributing and feedback
 
-## Contributing & feedback
-
-This is accessibility software. **Real-world feedback from screen-reader users
-is the most valuable contribution.** If a decision does not read well, an earcon
-is unclear, a keyboard shortcut is surprising, or the phone flow trips up your
-assistive technology — please open an issue.
+This is accessibility software, so real-world feedback from screen-reader users
+is the most valuable contribution. If a decision doesn't read well, an earcon is
+unclear, a keyboard shortcut is surprising, or the phone flow trips up your
+assistive technology, please open an issue.
 
 Bug reports and pull requests are welcome. Run `npm test` before submitting.
 
 If you find agent-ally useful, consider commenting on
-[Claude Code issue #11002](https://github.com/anthropics/claude-code/issues/11002)
-— the open request for a native `--screen-reader` mode in Claude Code. Linking
-your experience there helps make the case to Anthropic.
-
----
+[Claude Code issue #11002](https://github.com/anthropics/claude-code/issues/11002),
+the open request for a native `--screen-reader` mode in Claude Code. Linking your
+experience there helps make the case to Anthropic.
 
 ## Related work
 
-- **[BlindPilot](https://github.com/serrebidev/BlindPilot)** — screen-reader-first
-  desktop frontend for coding agents (native wxPython). Its approach is to bypass
-  permission prompts entirely (YOLO mode). agent-ally takes the opposite approach:
-  make the permission step itself accessible without skipping it.
+- **[BlindPilot](https://github.com/serrebidev/BlindPilot)** is a
+  screen-reader-first desktop frontend for coding agents (native wxPython). Its
+  approach is to bypass permission prompts entirely (YOLO mode). agent-ally takes
+  the opposite approach: make the permission step itself accessible without
+  skipping it.
 - **[Claude Code issue #11002](https://github.com/anthropics/claude-code/issues/11002)**
-  — open request for a native `--screen-reader` flag in Claude Code.
+  is the open request for a native `--screen-reader` flag in Claude Code.
 - **[Screen Reader Programmers in the Vibe Coding Era (arXiv 2506.13270)](https://arxiv.org/abs/2506.13270)**
-  — academic survey of how blind developers adapt to AI coding tools.
-
----
+  is an academic survey of how blind developers adapt to AI coding tools.
 
 ## License
 
