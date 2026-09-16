@@ -67,6 +67,10 @@
       .icon-btn { flex: 0 0 auto; margin: 0; padding: 0; width: auto; display: flex; align-items: center; justify-content: center; border-radius: 999px; line-height: 1; }
       #attach { width: 2.2rem; height: 2.2rem; background: transparent; color: #8fa6c9; font-size: 1.25rem; }
       #attach:active { color: #2b6ef2; }
+      #mic { width: 2.2rem; height: 2.2rem; background: transparent; color: #8fa6c9; font-size: 1.25rem; }
+      #mic.listening { color: #ff4d4f; animation: pulse 1s ease-in-out infinite; }
+      #mic:disabled { opacity: 0.3; }
+      @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
       #send { width: 2.3rem; height: 2.3rem; background: #2f6f3e; color: #fff; font-size: 1.15rem; }
       #send:disabled { opacity: 0.4; }
       #attachments { display: flex; flex-wrap: wrap; gap: 0.4rem; margin: 0.2rem 0; }
@@ -93,6 +97,7 @@
       <div class="input-bar">
         <button type="button" id="attach" class="icon-btn" aria-label="Attach files" title="Attach">📎</button>
         <textarea id="prompt" rows="1" placeholder="Message…"></textarea>
+        <button type="button" id="mic" class="icon-btn" aria-label="Speak prompt" title="Speak">🎤</button>
         <button type="submit" id="send" class="icon-btn" aria-label="Send" title="Send">➤</button>
       </div>
     </form>
@@ -152,6 +157,52 @@
         speechSynthesis.cancel();
         const u = new SpeechSynthesisUtterance(stripMarkdown(text));
         speechSynthesis.speak(u);
+      }
+      // ── Voice input (Speech-to-Text) ──────────────────────────────────────
+      const micBtn = document.getElementById("mic");
+      const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+      if (!SR) {
+        micBtn.disabled = true;
+        micBtn.title = "Voice input not supported in this browser";
+      } else {
+        const recognition = new SR();
+        recognition.continuous = false;
+        recognition.interimResults = true;
+        recognition.lang = "en-US";
+        let listening = false;
+
+        recognition.onresult = (e) => {
+          const transcript = Array.from(e.results).map((r) => r[0].transcript).join("");
+          promptEl.value = transcript;
+          autoGrow();
+        };
+
+        recognition.onend = () => {
+          listening = false;
+          micBtn.classList.remove("listening");
+          micBtn.setAttribute("aria-label", "Speak prompt");
+          // Auto-send if something was captured
+          if (promptEl.value.trim()) composerEl.requestSubmit();
+        };
+
+        recognition.onerror = () => {
+          listening = false;
+          micBtn.classList.remove("listening");
+        };
+
+        micBtn.addEventListener("click", () => {
+          if (listening) {
+            recognition.stop();
+          } else {
+            promptEl.value = "";
+            autoGrow();
+            recognition.start();
+            listening = true;
+            micBtn.classList.add("listening");
+            micBtn.setAttribute("aria-label", "Stop listening");
+          }
+        });
       }
       // ─────────────────────────────────────────────────────────────────────
 
