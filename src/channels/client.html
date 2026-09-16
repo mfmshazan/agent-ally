@@ -13,7 +13,10 @@
         background: #12131a; color: #f2f3f7;
         min-height: 100vh;
       }
-      h1 { font-size: 1rem; font-weight: 600; opacity: 0.7; margin: 0 0 1rem; }
+      header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem; }
+      h1 { font-size: 1rem; font-weight: 600; opacity: 0.7; margin: 0; }
+      #voice-btn { width: auto; padding: 0.3rem 0.7rem; font-size: 1.1rem; background: transparent; border: 1px solid #333; border-radius: 8px; color: #f2f3f7; margin: 0; cursor: pointer; }
+      #voice-btn.off { opacity: 0.4; }
       #status { opacity: 0.7; font-size: 0.95rem; }
       #title { font-size: 1.4rem; line-height: 1.35; margin: 0.5rem 0 0.25rem; }
       .risk { display: inline-block; font-weight: 700; padding: 0.15rem 0.6rem; border-radius: 999px; font-size: 0.8rem; margin-bottom: 0.5rem; }
@@ -74,7 +77,10 @@
     </style>
   </head>
   <body>
-    <h1>agent-ally &middot; remote</h1>
+    <header>
+      <h1>agent-ally &middot; remote</h1>
+      <button type="button" id="voice-btn" aria-label="Toggle voice" title="Toggle voice">🔊</button>
+    </header>
     <p id="status" role="status" aria-live="polite">Connecting&hellip;</p>
 
     <div id="decision" aria-live="assertive"></div>
@@ -102,6 +108,52 @@
       const fileEl = document.getElementById("file");
       const attachEl = document.getElementById("attach");
       const attachmentsEl = document.getElementById("attachments");
+
+      // ── Phone voice (Web Speech API) ──────────────────────────────────────
+      const voiceBtn = document.getElementById("voice-btn");
+      let voiceOn = localStorage.getItem("aa-voice") !== "off";
+      let speechReady = false; // iOS requires a user gesture before speaking
+      let replayingHistory = false;
+
+      function updateVoiceBtn() {
+        voiceBtn.textContent = voiceOn ? "🔊" : "🔇";
+        voiceBtn.classList.toggle("off", !voiceOn);
+        voiceBtn.setAttribute("aria-label", voiceOn ? "Voice on — tap to mute" : "Voice off — tap to unmute");
+      }
+      updateVoiceBtn();
+
+      voiceBtn.addEventListener("click", () => {
+        voiceOn = !voiceOn;
+        localStorage.setItem("aa-voice", voiceOn ? "on" : "off");
+        updateVoiceBtn();
+        if (voiceOn) speak("Voice on.");
+        else speechSynthesis.cancel();
+      });
+
+      // Warm up the speech engine on first user tap (required on iOS).
+      document.addEventListener("click", () => {
+        if (speechReady || !("speechSynthesis" in window)) return;
+        speechReady = true;
+        const warm = new SpeechSynthesisUtterance("");
+        speechSynthesis.speak(warm);
+      }, { once: true });
+
+      function stripMarkdown(text) {
+        return text
+          .replace(/\*\*([^*]+)\*\*/g, "$1")
+          .replace(/`([^`]+)`/g, "$1")
+          .replace(/^#+\s+/gm, "")
+          .replace(/^\s*[-*]\s+/gm, "")
+          .trim();
+      }
+
+      function speak(text) {
+        if (!voiceOn || !("speechSynthesis" in window)) return;
+        speechSynthesis.cancel();
+        const u = new SpeechSynthesisUtterance(stripMarkdown(text));
+        speechSynthesis.speak(u);
+      }
+      // ─────────────────────────────────────────────────────────────────────
 
       const MAX_FILE_BYTES = 25 * 1024 * 1024; // keep in step with the server cap
       const MAX_FILES = 10;
@@ -154,7 +206,7 @@
         ws.onmessage = (e) => {
           const msg = JSON.parse(e.data);
           if (msg.type === "hello") { acceptsPrompts = !!msg.acceptsPrompts; refreshComposer(); }
-          else if (msg.type === "history") { transcriptEl.innerHTML = ""; lastDay = null; (msg.entries || []).forEach((e) => addMessage(e.role, e.text, e.at)); refreshComposer(); }
+          else if (msg.type === "history") { transcriptEl.innerHTML = ""; lastDay = null; replayingHistory = true; (msg.entries || []).forEach((e) => addMessage(e.role, e.text, e.at)); replayingHistory = false; refreshComposer(); }
           else if (msg.type === "decision") render(msg.decision);
           else if (msg.type === "clear") clearDecision();
           else if (msg.type === "log") addMessage(msg.role, msg.text, msg.at);
@@ -224,6 +276,7 @@
       }
 
       function addMessage(role, text, at) {
+        if (!replayingHistory && role === "agent") speak(text);
         const d = parseAt(at);
         maybeDaySeparator(d);
         const el = document.createElement("div");
@@ -306,6 +359,11 @@
         current = decision;
         refreshComposer();
         statusEl.textContent = decision.kind === "question" ? "The agent is asking:" : "Permission needed:";
+        if (!note) {
+          const parts = decision.options.map((o, i) => `${i + 1}, ${o.label}`);
+          const risk = decision.riskLevel && decision.riskLevel !== "low" ? ` ${decision.riskLevel} risk.` : "";
+          speak(`${decision.kind === "question" ? "Claude is asking" : "Permission needed"}. ${decision.title}.${risk} Options: ${parts.join(". ")}.`);
+        }
 
         const frag = document.createDocumentFragment();
         const title = document.createElement("p");
